@@ -40,7 +40,7 @@ GPL-3.0-or-later
 | video.js | Apache-2.0 | 可选播放器界面 | 保留许可证和署名声明 |
 | mpv | GPL-2.0-or-later | 原生播放兜底 | 分发时项目必须 GPL 兼容 |
 | FFmpeg | 取决于构建，LGPL 或 GPL | mpv 媒体后端 | 必须确认构建参数和许可证模式 |
-| EasyPlayer.js | 待确认 | 可选实验能力 | 许可证确认前不能随包发布 |
+| EasyPlayer.js | 待确认 | 重点评估的增强播放器，覆盖 HLS、HTTP-FLV、fMP4、WebRTC、H.265 等场景 | 许可证确认前不能随包发布 |
 
 ## mpv 和 FFmpeg 注意事项
 
@@ -67,7 +67,7 @@ GPL-3.0-or-later
 - 确认 `THIRD_PARTY_NOTICES.md` 是最新。
 - 确认每个打包二进制都列入清单。
 - 确认每个包的许可证都已知。
-- 确认 EasyPlayer.js 没有在许可证未确认时进入安装包。
+- 确认 EasyPlayer.js 没有在许可证未确认时进入公开安装包。
 - 确认 GPL 覆盖的发布有对应源码可获取。
 - 确认发布说明提到内置媒体引擎。
 

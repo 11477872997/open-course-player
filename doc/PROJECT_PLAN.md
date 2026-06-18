@@ -36,6 +36,7 @@
 - 打包或发现本机 mpv。
 - 增加 mpv 适配器，兜底 `.mkv`、`.avi`、`.flv`、`.mov`、`.wmv`、`.rmvb`、`.vob` 和内置播放器播放失败的文件。
 - 通过进程通信控制 mpv。
+- 重点评估 EasyPlayer.js，用于 HLS、HTTP-FLV、fMP4、WebRTC、H.265 等增强播放场景。
 - 自动加载同名字幕。
 - 增加上一节/下一节。
 - 增加最近播放和最近目录。

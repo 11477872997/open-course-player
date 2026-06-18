@@ -42,7 +42,7 @@
 - 新依赖已写入 `THIRD_PARTY_NOTICES.md`。
 - 新打包二进制已记录版本、来源和许可证。
 - 许可证兼容性已检查。
-- EasyPlayer.js 未在许可证确认前进入安装包。
+- EasyPlayer.js 未在许可证确认前进入公开安装包。
 
 ## 文档
 

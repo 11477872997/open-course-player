@@ -36,3 +36,19 @@
 - 前端使用 TypeScript。
 - 本地文件、媒体服务、原生进程控制放在 Rust。
 - 播放格式判断和播放器调度保持集中。
+
+---
+
+# English
+
+Thanks for helping improve `open-course-player`.
+
+Before contributing, please read the constraints, architecture, player support, and open source compliance documents in `doc/`.
+
+Development principles:
+
+- Keep `.ts` playback reliable.
+- Keep local file access explicit, controlled, and validated.
+- Prefer small, clear changes.
+- Document any new media engine, binary, or dependency.
+- Do not add telemetry or network behavior without documentation and user control.

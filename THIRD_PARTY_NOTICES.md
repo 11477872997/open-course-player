@@ -16,7 +16,7 @@
 | video.js | Apache-2.0 | 可选媒体 UI | 待定 |
 | mpv | GPL-2.0-or-later | 原生播放兜底 | 计划 |
 | FFmpeg | 取决于构建，LGPL 或 GPL | 通过 mpv 做解封装和解码 | 计划随 mpv |
-| EasyPlayer.js | 待确认 | 可选实验能力，流媒体/H.265 | 许可证确认前不进入安装包 |
+| EasyPlayer.js | 待确认 | 重点评估的增强播放器，流媒体/H.265 | 许可证确认前不进入公开安装包 |
 
 ## 打包二进制规则
 
@@ -37,4 +37,26 @@
 
 - 分发 mpv 需要按 GPL 兼容方式发布。
 - FFmpeg 许可证取决于构建参数。
-- EasyPlayer.js 必须确认许可证后才能随包发布。
+- EasyPlayer.js 是重点评估组件，但必须确认许可证后才能随公开安装包发布。
+
+---
+
+# English
+
+This file tracks planned and bundled third-party components.
+
+Before the first public binary release, planned versions must be replaced with exact versions and required license texts or links.
+
+## Planned Dependencies
+
+| Component | License | Use | Bundled in installer |
+| --- | --- | --- | --- |
+| Tauri | MIT or Apache-2.0 | Desktop shell and API bridge | Yes |
+| Vue | MIT | Frontend framework | Yes, compiled assets |
+| Element Plus | MIT | UI components | Yes, compiled assets |
+| mpegts.js | Apache-2.0 | MPEG-TS playback through MSE | Yes, bundled JS |
+| hls.js | Apache-2.0 | HLS playback | Yes, bundled JS |
+| video.js | Apache-2.0 | Optional media UI | To be decided |
+| mpv | GPL-2.0-or-later | Native playback fallback | Planned |
+| FFmpeg | LGPL or GPL depending on build | Demuxing and decoding through mpv | Planned through mpv |
+| EasyPlayer.js | To be confirmed | Key candidate for streaming/H.265 enhancement | No public installer bundling until license is confirmed |

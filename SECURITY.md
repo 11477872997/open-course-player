@@ -22,3 +22,20 @@
 - 后端读取或服务文件前必须校验路径。
 - 应用默认不做全盘扫描。
 - 子进程调用不能用原始字符串拼接 shell 命令。
+
+---
+
+# English
+
+No public version has been released yet.
+
+Please report security issues privately if the repository host supports private security advisories.
+
+Do not publicly disclose vulnerabilities that allow reading files outside selected roots, exposing the local media service to the network, command injection through media paths, arbitrary mpv process control, or silent upload of local file information.
+
+Security boundaries:
+
+- The local media service must bind to `127.0.0.1`.
+- The backend must validate paths before reading or serving files.
+- The app must not scan the full disk by default.
+- Subprocess calls must not be built from raw shell strings.

@@ -28,7 +28,7 @@
 | 媒体类型 | 优先方案 | 兜底方案 |
 | --- | --- | --- |
 | `.ts`, `.m2ts`, `.mts` | 本地 HTTP 媒体服务 + `mpegts.js` | mpv |
-| `.m3u8` | `hls.js` | mpv |
+| `.m3u8`, HTTP-FLV, fMP4, H.265 流 | EasyPlayer.js / `hls.js` | mpv |
 | `.mp4`, `.m4v`, `.webm`, `.mp3`, `.wav` | HTML5 video/audio | mpv |
 | `.mkv`, `.avi`, `.flv`, `.mov`, `.wmv`, `.rmvb`, `.vob` | mpv | 外部打开 |
 | `.srt`, `.ass`, `.vtt` | mpv 字幕加载 | WebVTT 能力范围内支持 |
@@ -56,6 +56,31 @@ GPL-3.0-or-later
 
 这个选择偏保守，原因是项目计划随安装包分发 mpv/FFmpeg 相关播放组件。具体规则见 [doc/OPEN_SOURCE_COMPLIANCE.md](./doc/OPEN_SOURCE_COMPLIANCE.md) 和 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
 
+EasyPlayer.js 是重点评估的增强播放器，用于 HLS、HTTP-FLV、fMP4、WebRTC、H.265 等场景。它不是被排除，只是公开发布前需要确认许可证和二进制/脚本分发规则。
+
 ## 当前状态
 
 当前仓库只包含项目规划、约束、架构和开源合规文档。实现开始前，应先确认这些规则是否符合项目方向。
+
+---
+
+# English
+
+`open-course-player` is an open source desktop player for local course folders and media libraries.
+
+The first target is stable Windows playback for `.ts` course files. The long-term goal is a local course player with a folder tree, playback area, mainstream media format support, progress saving, subtitles, shortcuts, and open source compliant packaging.
+
+## Planned Stack
+
+| Layer | Choice | Purpose |
+| --- | --- | --- |
+| Desktop shell | Tauri 2 | Lightweight desktop packaging and Rust bridge |
+| Frontend | Vue 3 + TypeScript + Vite | Player UI, folder tree, state orchestration |
+| UI | Element Plus | Tree, buttons, dialogs, settings |
+| Backend | Rust | Directory scanning, local media service, mpv process control |
+| Built-in playback | HTML5 video + mpegts.js + hls.js | `.ts`, `.m3u8`, `.mp4`, and WebView-compatible formats |
+| Native fallback | mpv sidecar | Mainstream local video formats, subtitles, and complex codecs |
+
+## License
+
+The project is planned under `GPL-3.0-or-later` because it may distribute mpv/FFmpeg related playback components.

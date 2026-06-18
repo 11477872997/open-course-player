@@ -8,6 +8,7 @@
 内置播放器：启动快、界面融合好
 mpegts.js：优先支持本地 .ts 文件
 hls.js：支持 HLS 播放列表
+EasyPlayer.js：重点评估的增强播放器，覆盖 HLS、HTTP-FLV、fMP4、WebRTC、H.265 等场景
 mpv：主流本地文件格式兼容兜底
 ```
 
@@ -17,7 +18,8 @@ mpv：主流本地文件格式兼容兜底
 | --- | --- | --- | --- | --- |
 | `.ts` | P0 | mpegts.js | mpv | 第一优先级格式 |
 | `.m2ts`, `.mts` | P0 | mpegts.js | mpv | 取决于容器内编码 |
-| `.m3u8` | P1 | hls.js | mpv | HLS 播放列表，常引用 `.ts` 分片 |
+| `.m3u8` | P1 | EasyPlayer.js 或 hls.js | mpv | HLS 播放列表，常引用 `.ts` 分片 |
+| HTTP-FLV, fMP4, WebRTC, H.265 流 | P1 | EasyPlayer.js | mpv 或外部方案 | EasyPlayer.js 的强项，许可证确认后接入 |
 | `.mp4`, `.m4v` | P1 | HTML5 视频 | mpv | H.264/AAC 兼容性最好 |
 | `.webm` | P2 | HTML5 视频 | mpv | 取决于桌面网页视图的编码支持 |
 | `.mp3`, `.wav`, `.ogg`, `.flac` | P2 | HTML5 音频 | mpv | 后续可做音频模式 |
@@ -36,8 +38,12 @@ mpv：主流本地文件格式兼容兜底
   -> 内置播放器适配器失败后切 mpv
 
 .m3u8
-  -> hls.js
+  -> EasyPlayer.js 或 hls.js
   -> 内置播放器适配器失败后切 mpv
+
+HTTP-FLV/fMP4/WebRTC/H.265 流
+  -> EasyPlayer.js
+  -> 失败后给出清楚错误或切换兜底方案
 
 .mp4/.webm/音频
   -> HTML5 媒体元素
@@ -76,6 +82,14 @@ mpv：主流本地文件格式兼容兜底
 - 进度事件要节流。
 - 字幕自动加载优先匹配同名字幕。
 - 如果随包分发 mpv，必须记录版本和许可证。
+
+## EasyPlayer.js 要求
+
+- EasyPlayer.js 是重点评估播放器，不是弃用方案。
+- 优先用于 HLS、HTTP-FLV、fMP4、WebRTC、H.265、WASM/WebCodec 解码等增强场景。
+- 公开发布前必须确认许可证、分发方式和是否允许随安装包打包。
+- 如果许可证确认可用，应把它作为 `EasyPlayerAdapter` 接入播放调度层。
+- 如果许可证或分发规则不清楚，可以先保留本地预研，不进入公开安装包。
 
 ## 不支持格式行为
 
