@@ -16,6 +16,7 @@
 | [CONSTRAINTS.md](./CONSTRAINTS.md) | 产品、安全、播放、打包约束 | 新能力改变项目边界 |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | 系统分层、模块和数据流 | 模块边界、后端命令、播放流程变化 |
 | [PLAYER_SUPPORT.md](./PLAYER_SUPPORT.md) | 格式矩阵和播放器适配策略 | 新增或修改格式支持 |
+| [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) | UI 风格、布局、色彩、组件和交互规范 | 修改界面风格、布局、公共组件 |
 | [OPEN_SOURCE_COMPLIANCE.md](./OPEN_SOURCE_COMPLIANCE.md) | 许可证策略和第三方义务 | 新增依赖、二进制、解码器或发布资源 |
 | [RELEASE.md](./RELEASE.md) | 构建、打包和发布规则 | 构建脚本、安装包内容、发布流程变化 |
 | [CHANGE_CHECKLIST.md](./CHANGE_CHECKLIST.md) | 完成变更前的必查清单 | 清单本身不够用时 |

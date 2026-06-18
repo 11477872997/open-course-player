@@ -42,6 +42,7 @@
 | [doc/CONSTRAINTS.md](./doc/CONSTRAINTS.md) | 产品、安全、播放、打包约束 |
 | [doc/ARCHITECTURE.md](./doc/ARCHITECTURE.md) | 系统架构和模块边界 |
 | [doc/PLAYER_SUPPORT.md](./doc/PLAYER_SUPPORT.md) | 格式支持矩阵和播放器调度规则 |
+| [doc/DESIGN_SYSTEM.md](./doc/DESIGN_SYSTEM.md) | UI 风格、布局、色彩、组件和交互规范 |
 | [doc/OPEN_SOURCE_COMPLIANCE.md](./doc/OPEN_SOURCE_COMPLIANCE.md) | 开源许可证和第三方依赖合规 |
 | [doc/RELEASE.md](./doc/RELEASE.md) | 构建、打包、发布流程 |
 | [doc/CHANGE_CHECKLIST.md](./doc/CHANGE_CHECKLIST.md) | 每次变更完成前的检查清单 |

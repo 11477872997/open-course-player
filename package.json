@@ -8,6 +8,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
+    "design:system": "python tools/ui-ux-pro-max/scripts/search.py \"desktop course video player productivity tool dark content dense\" --design-system -p \"open-course-player\" -f markdown",
+    "design:ux": "python tools/ui-ux-pro-max/scripts/search.py \"desktop player sidebar file tree accessibility\" --domain ux -n 6",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

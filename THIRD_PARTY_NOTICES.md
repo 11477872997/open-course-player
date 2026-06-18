@@ -39,6 +39,12 @@
 | --- | --- | --- | --- |
 | CD Player.png | 用户提供的本地素材 `C:\Users\11478\Downloads\CD Player.png` | 应用图标、窗口图标、安装包图标 | 由素材提供者确认使用权 |
 
+## 当前开发工具
+
+| 工具 | 来源 | 用途 | 许可证 |
+| --- | --- | --- | --- |
+| UI/UX Pro Max | `C:\Users\11478\Downloads\ui-ux-pro-max-skill-main\ui-ux-pro-max-skill-main` | 设计系统查询和 UI 规范参考，不进入运行时包 | MIT |
+
 ## 许可证检查备注
 
 - 分发 mpv 需要按 GPL 兼容方式发布。
@@ -72,3 +78,9 @@ Before the first public binary release, planned versions must be replaced with e
 | Asset | Source | Use | License |
 | --- | --- | --- | --- |
 | CD Player.png | User-provided local asset `C:\Users\11478\Downloads\CD Player.png` | App icon, window icon, installer icon | Usage rights confirmed by asset provider |
+
+## Current Development Tools
+
+| Tool | Source | Use | License |
+| --- | --- | --- | --- |
+| UI/UX Pro Max | `C:\Users\11478\Downloads\ui-ux-pro-max-skill-main\ui-ux-pro-max-skill-main` | Design-system query and UI guidance, not bundled at runtime | MIT |

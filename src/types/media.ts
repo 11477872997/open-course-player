@@ -18,3 +18,12 @@ export interface SelectedMedia {
   path: string;
   engine: PlayerEngine | "unsupported";
 }
+
+export interface MediaLibraryRoot {
+  id: string;
+  name: string;
+  path: string;
+  nodes: MediaTreeNode[];
+  totalFiles: number;
+  playableFiles: number;
+}
