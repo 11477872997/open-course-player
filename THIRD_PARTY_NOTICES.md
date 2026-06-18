@@ -33,6 +33,12 @@
 
 暂无。
 
+## 当前素材
+
+| 素材 | 来源 | 用途 | 授权 |
+| --- | --- | --- | --- |
+| CD Player.png | 用户提供的本地素材 `C:\Users\11478\Downloads\CD Player.png` | 应用图标、窗口图标、安装包图标 | 由素材提供者确认使用权 |
+
 ## 许可证检查备注
 
 - 分发 mpv 需要按 GPL 兼容方式发布。
@@ -60,3 +66,9 @@ Before the first public binary release, planned versions must be replaced with e
 | mpv | GPL-2.0-or-later | Native playback fallback | Planned |
 | FFmpeg | LGPL or GPL depending on build | Demuxing and decoding through mpv | Planned through mpv |
 | EasyPlayer.js | To be confirmed | Key candidate for streaming/H.265 enhancement | No public installer bundling until license is confirmed |
+
+## Current Assets
+
+| Asset | Source | Use | License |
+| --- | --- | --- | --- |
+| CD Player.png | User-provided local asset `C:\Users\11478\Downloads\CD Player.png` | App icon, window icon, installer icon | Usage rights confirmed by asset provider |
