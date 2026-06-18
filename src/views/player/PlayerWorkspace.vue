@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
-import { isTauri } from "@tauri-apps/api/core";
+import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ElMessage } from "element-plus";
 import { FullScreen, Minus, Refresh, Search, SwitchButton } from "@element-plus/icons-vue";
+import Hls from "hls.js";
+import mpegts from "mpegts.js";
 import LibraryList from "./components/LibraryList.vue";
 import FileTree from "./components/FileTree.vue";
 import PlaybackSurface from "./components/PlaybackSurface.vue";
 import PlayerControls from "./components/PlayerControls.vue";
 import { scanMediaRoot } from "../../api/mediaLibrary";
+import { playWithMpv } from "../../api/mpv";
 import { describeEngine } from "../../player/mediaTypes";
 import { choosePlayback } from "../../player/playbackRouter";
 import { useLibraryStore } from "../../store/modules/library";
@@ -20,6 +23,16 @@ const appWindow = isTauri() ? getCurrentWindow() : null;
 const loadingRootId = ref("");
 const searchKeyword = ref("");
 const playbackMessage = ref("添加本地文件夹后开始播放");
+const videoElement = ref<HTMLVideoElement | null>(null);
+const mediaSourceUrl = ref("");
+const playing = ref(false);
+const currentTime = ref(0);
+const duration = ref(0);
+const volume = ref(0.8);
+const playbackRate = ref(1);
+
+let hlsPlayer: Hls | null = null;
+let mpegtsPlayer: mpegts.Player | null = null;
 
 const activeRoot = computed(() => library.activeRoot);
 const selectedEngineName = computed(() =>
@@ -27,11 +40,23 @@ const selectedEngineName = computed(() =>
 );
 const currentNodes = computed(() => library.activeNodes);
 const loading = computed(() => Boolean(loadingRootId.value));
+const playableNodes = computed(() => flattenPlayableNodes(currentNodes.value));
 
 const filteredNodes = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase();
   if (!keyword) return currentNodes.value;
   return filterTree(currentNodes.value, keyword);
+});
+
+watch(
+  () => library.selectedMedia,
+  (media) => {
+    void loadSelectedMedia(media);
+  }
+);
+
+onBeforeUnmount(() => {
+  destroyPlaybackAdapters();
 });
 
 async function chooseFolder() {
@@ -100,6 +125,163 @@ function handleSelect(node: MediaTreeNode) {
   playbackMessage.value = decision.reason;
 }
 
+async function loadSelectedMedia(media: SelectedMedia | null) {
+  destroyPlaybackAdapters();
+  mediaSourceUrl.value = "";
+  playing.value = false;
+  currentTime.value = 0;
+  duration.value = 0;
+
+  if (!media) {
+    playbackMessage.value = "添加本地文件夹后开始播放";
+    return;
+  }
+
+  if (media.engine === "mpv") {
+    try {
+      await playWithMpv(media.path);
+      playbackMessage.value = "已调用 mpv 兜底播放";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      playbackMessage.value = message;
+      ElMessage.warning(message);
+    }
+    return;
+  }
+
+  if (media.engine === "unsupported") {
+    playbackMessage.value = "当前文件格式暂未接入播放器";
+    return;
+  }
+
+  const sourceUrl = isTauri() ? convertFileSrc(media.path) : media.path;
+  mediaSourceUrl.value = sourceUrl;
+  playbackMessage.value = "媒体已加载";
+  await nextTick();
+  attachPlaybackAdapter(media, sourceUrl);
+}
+
+function attachPlaybackAdapter(media: SelectedMedia, sourceUrl: string) {
+  const video = videoElement.value;
+  if (!video) return;
+
+  video.volume = volume.value;
+  video.playbackRate = playbackRate.value;
+
+  if (media.engine === "mpegts" && mpegts.getFeatureList().mseLivePlayback) {
+    mpegtsPlayer = mpegts.createPlayer({
+      type: "mpegts",
+      url: sourceUrl,
+      isLive: false
+    });
+    mpegtsPlayer.attachMediaElement(video);
+    mpegtsPlayer.load();
+    playbackMessage.value = "MPEG-TS 已加载";
+    return;
+  }
+
+  if (media.engine === "easy-player" && Hls.isSupported()) {
+    hlsPlayer = new Hls();
+    hlsPlayer.loadSource(sourceUrl);
+    hlsPlayer.attachMedia(video);
+    playbackMessage.value = "HLS 已加载";
+    return;
+  }
+
+  video.src = sourceUrl;
+  video.load();
+}
+
+function destroyPlaybackAdapters() {
+  hlsPlayer?.destroy();
+  hlsPlayer = null;
+  mpegtsPlayer?.destroy();
+  mpegtsPlayer = null;
+}
+
+function setVideoElement(element: HTMLVideoElement | null) {
+  videoElement.value = element;
+}
+
+async function togglePlayPause() {
+  const video = videoElement.value;
+  if (!video || !library.selectedMedia) return;
+
+  if (video.paused) {
+    try {
+      await video.play();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ElMessage.warning(`播放失败：${message}`);
+    }
+  } else {
+    video.pause();
+  }
+}
+
+function seekTo(value: number) {
+  const video = videoElement.value;
+  if (!video || !Number.isFinite(value)) return;
+  video.currentTime = value;
+  currentTime.value = value;
+}
+
+function setVolume(value: number) {
+  volume.value = Math.min(1, Math.max(0, value));
+  if (videoElement.value) videoElement.value.volume = volume.value;
+}
+
+function setPlaybackRate(value: number) {
+  playbackRate.value = value;
+  if (videoElement.value) videoElement.value.playbackRate = value;
+}
+
+function syncMetadata() {
+  const video = videoElement.value;
+  if (!video) return;
+  duration.value = Number.isFinite(video.duration) ? video.duration : 0;
+}
+
+function syncTime() {
+  const video = videoElement.value;
+  if (!video) return;
+  currentTime.value = video.currentTime;
+}
+
+function setPlayingState(value: boolean) {
+  playing.value = value;
+}
+
+function playPrevious() {
+  playAdjacent(-1);
+}
+
+function playNext() {
+  playAdjacent(1);
+}
+
+function playAdjacent(direction: -1 | 1) {
+  const current = library.selectedMedia;
+  const items = playableNodes.value;
+  if (!current || !items.length) return;
+
+  const index = items.findIndex((item) => item.id === current.id);
+  const nextIndex = index < 0 ? 0 : (index + direction + items.length) % items.length;
+  handleSelect(items[nextIndex]);
+}
+
+async function requestPlayerFullscreen() {
+  const video = videoElement.value;
+  if (!video) return;
+
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+    return;
+  }
+
+  await video.requestFullscreen();
+}
+
 function filterTree(nodes: MediaTreeNode[], keyword: string): MediaTreeNode[] {
   const result: MediaTreeNode[] = [];
 
@@ -118,7 +300,20 @@ function filterTree(nodes: MediaTreeNode[], keyword: string): MediaTreeNode[] {
   return result;
 }
 
-function startDrag() {
+function flattenPlayableNodes(nodes: MediaTreeNode[]) {
+  const result: MediaTreeNode[] = [];
+  const walk = (items: MediaTreeNode[]) => {
+    for (const item of items) {
+      if (item.playable && item.kind !== "folder") result.push(item);
+      if (item.children?.length) walk(item.children);
+    }
+  };
+  walk(nodes);
+  return result;
+}
+
+function startDrag(event: MouseEvent) {
+  if ((event.target as HTMLElement).closest("button, input, .el-input, .window-actions")) return;
   void appWindow?.startDragging();
 }
 
@@ -140,9 +335,7 @@ async function toggleFullscreenWindow() {
 <template>
   <main class="player-shell">
     <section class="player-window">
-      <header class="window-toolbar" @dblclick="toggleMaximizeWindow">
-        <div class="drag-region" @mousedown.left="startDrag" />
-
+      <header class="window-toolbar" @mousedown.left="startDrag" @dblclick="toggleMaximizeWindow">
         <div class="brand-mini">
           <img src="../../assets/brand/cd-player.png" alt="" />
           <strong>Open Course Player</strong>
@@ -178,11 +371,38 @@ async function toggleFullscreenWindow() {
         <section class="player-column">
           <PlaybackSurface
             :media="library.selectedMedia"
+            :source-url="mediaSourceUrl"
             :message="playbackMessage"
             :engine-name="selectedEngineName"
+            :playing="playing"
+            :duration="duration"
             @add-folder="chooseFolder"
+            @previous="playPrevious"
+            @next="playNext"
+            @play-pause="togglePlayPause"
+            @fullscreen="requestPlayerFullscreen"
+            @video-mounted="setVideoElement"
+            @loaded-metadata="syncMetadata"
+            @time-update="syncTime"
+            @play="setPlayingState(true)"
+            @pause="setPlayingState(false)"
+            @ended="playNext"
           />
-          <PlayerControls :disabled="!library.selectedMedia" />
+          <PlayerControls
+            :disabled="!library.selectedMedia || !mediaSourceUrl"
+            :playing="playing"
+            :current-time="currentTime"
+            :duration="duration"
+            :volume="volume"
+            :playback-rate="playbackRate"
+            @play-pause="togglePlayPause"
+            @previous="playPrevious"
+            @next="playNext"
+            @seek="seekTo"
+            @volume="setVolume"
+            @rate="setPlaybackRate"
+            @fullscreen="requestPlayerFullscreen"
+          />
         </section>
 
         <aside class="chapter-panel">
@@ -237,7 +457,6 @@ async function toggleFullscreenWindow() {
 }
 
 .window-toolbar {
-  position: relative;
   display: grid;
   grid-template-columns: 180px minmax(220px, 1fr) auto;
   align-items: center;
@@ -245,19 +464,6 @@ async function toggleFullscreenWindow() {
   padding: 0 12px;
   border-bottom: 1px solid var(--ocp-dark-border);
   background: rgba(12, 18, 27, 0.86);
-}
-
-.drag-region {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-}
-
-.brand-mini,
-.global-search,
-.window-actions {
-  position: relative;
-  z-index: 1;
 }
 
 .brand-mini {
@@ -381,10 +587,6 @@ async function toggleFullscreenWindow() {
 }
 
 @media (max-width: 980px) {
-  .player-shell {
-    padding: 0;
-  }
-
   .player-window {
     width: 100%;
     height: 100%;

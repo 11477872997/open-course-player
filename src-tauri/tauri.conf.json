@@ -13,16 +13,20 @@
     "windows": [
       {
         "title": "open-course-player",
-        "width": 950,
+        "width": 1000,
         "height": 650,
-        "minWidth": 900,
-        "minHeight": 600,
+        "minWidth": 1000,
+        "minHeight": 650,
         "decorations": false,
         "shadow": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
     }
   },
   "bundle": {

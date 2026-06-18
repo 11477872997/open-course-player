@@ -1,31 +1,67 @@
 <script setup lang="ts">
-import {
-  ArrowLeft,
-  ArrowRight,
-  Calendar,
-  FolderAdd,
-  FullScreen,
-  Monitor,
-  VideoCamera
-} from "@element-plus/icons-vue";
+import type { ComponentPublicInstance } from "vue";
+import { ArrowLeft, ArrowRight, Calendar, FolderAdd, FullScreen, Monitor, VideoCamera } from "@element-plus/icons-vue";
 import type { SelectedMedia } from "../../../types/media";
 
 defineProps<{
   media: SelectedMedia | null;
+  sourceUrl: string;
   message: string;
   engineName: string;
+  playing: boolean;
+  duration: number;
 }>();
 
 const emit = defineEmits<{
   addFolder: [];
+  previous: [];
+  next: [];
+  playPause: [];
+  fullscreen: [];
+  videoMounted: [element: HTMLVideoElement | null];
+  loadedMetadata: [];
+  timeUpdate: [];
+  play: [];
+  pause: [];
+  ended: [];
 }>();
+
+function setVideoRef(element: Element | ComponentPublicInstance | null) {
+  emit("videoMounted", element instanceof HTMLVideoElement ? element : null);
+}
+
+function formatDuration(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "--:--";
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
 </script>
 
 <template>
   <div class="playback-surface">
     <div class="video-card">
-      <div class="player-stage">
-        <video v-if="media" class="video-element" controls />
+      <div class="player-stage" @dblclick="emit('fullscreen')">
+        <video
+          v-if="media && sourceUrl"
+          :ref="setVideoRef"
+          class="video-element"
+          :src="sourceUrl"
+          playsinline
+          @loadedmetadata="emit('loadedMetadata')"
+          @timeupdate="emit('timeUpdate')"
+          @play="emit('play')"
+          @pause="emit('pause')"
+          @ended="emit('ended')"
+        />
+
+        <button v-if="media && sourceUrl" class="center-play" type="button" @click="emit('playPause')">
+          <el-icon :size="44">
+            <VideoCamera v-if="playing" />
+            <Monitor v-else />
+          </el-icon>
+        </button>
 
         <div v-else class="empty-stage">
           <div class="empty-icon">
@@ -39,11 +75,11 @@ const emit = defineEmits<{
         </div>
 
         <div class="stage-top">
-          <span>正在播放</span>
+          <span>{{ media ? "正在播放" : "等待选择" }}</span>
           <div class="stage-tools">
-            <el-icon><Monitor /></el-icon>
-            <el-icon><VideoCamera /></el-icon>
-            <el-icon><FullScreen /></el-icon>
+            <button type="button" @click="emit('fullscreen')">
+              <el-icon><FullScreen /></el-icon>
+            </button>
           </div>
         </div>
       </div>
@@ -55,16 +91,15 @@ const emit = defineEmits<{
         </div>
 
         <div class="file-actions">
-          <el-button :icon="ArrowLeft" :disabled="!media">上一文件</el-button>
-          <el-button type="primary" :icon="ArrowRight" :disabled="!media">下一文件</el-button>
+          <el-button :icon="ArrowLeft" :disabled="!media" @click="emit('previous')">上一文件</el-button>
+          <el-button type="primary" :icon="ArrowRight" :disabled="!media" @click="emit('next')">下一文件</el-button>
         </div>
 
         <div class="meta-row">
           <span>{{ engineName }}</span>
-          <span>1920x1080</span>
-          <span>45:30</span>
-          <span><el-icon><Calendar /></el-icon> 2024-01-15</span>
-          <span>1.2GB</span>
+          <span>{{ sourceUrl ? "本地文件" : "未加载" }}</span>
+          <span>{{ formatDuration(duration) }}</span>
+          <span><el-icon><Calendar /></el-icon> {{ media ? "已选择" : "等待中" }}</span>
         </div>
       </section>
     </div>
@@ -104,6 +139,26 @@ const emit = defineEmits<{
   width: 100%;
   height: 100%;
   background: #080b10;
+  object-fit: contain;
+}
+
+.center-play {
+  position: absolute;
+  display: grid;
+  width: 74px;
+  height: 74px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.34);
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.player-stage:hover .center-play {
+  opacity: 1;
 }
 
 .empty-stage {
@@ -159,10 +214,18 @@ const emit = defineEmits<{
 }
 
 .stage-tools {
-  display: flex;
-  gap: 14px;
+  pointer-events: auto;
+}
+
+.stage-tools button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.48);
   color: #d8e5f7;
-  font-size: 18px;
+  cursor: pointer;
 }
 
 .media-info {

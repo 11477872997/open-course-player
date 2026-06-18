@@ -4,5 +4,9 @@ pub fn mpv_play(path: String) -> Result<(), String> {
         return Err("媒体路径不能为空".to_string());
     }
 
-    Err("mpv 兜底播放尚未实现，后续会接入进程启动和控制".to_string())
+    std::process::Command::new("mpv")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("启动 mpv 失败，请确认已安装 mpv 并加入 PATH：{error}"))
 }
