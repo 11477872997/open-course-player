@@ -1,19 +1,72 @@
 <script setup lang="ts">
-import { Monitor } from "@element-plus/icons-vue";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  FolderAdd,
+  FullScreen,
+  Monitor,
+  VideoCamera
+} from "@element-plus/icons-vue";
 import type { SelectedMedia } from "../../../types/media";
 
 defineProps<{
   media: SelectedMedia | null;
   message: string;
+  engineName: string;
+}>();
+
+const emit = defineEmits<{
+  addFolder: [];
 }>();
 </script>
 
 <template>
   <div class="playback-surface">
-    <video v-if="media" class="video-element" controls />
-    <div v-else class="empty-state">
-      <el-icon :size="44"><Monitor /></el-icon>
-      <span>{{ message }}</span>
+    <div class="video-card">
+      <div class="player-stage">
+        <video v-if="media" class="video-element" controls />
+
+        <div v-else class="empty-stage">
+          <div class="empty-icon">
+            <el-icon :size="38"><Monitor /></el-icon>
+          </div>
+          <strong>选择本地视频</strong>
+          <span>{{ message }}</span>
+          <el-button type="primary" :icon="FolderAdd" @click="emit('addFolder')">
+            添加文件夹
+          </el-button>
+        </div>
+
+        <div class="stage-top">
+          <span>正在播放</span>
+          <div class="stage-tools">
+            <el-icon><Monitor /></el-icon>
+            <el-icon><VideoCamera /></el-icon>
+            <el-icon><FullScreen /></el-icon>
+          </div>
+        </div>
+      </div>
+
+      <section class="media-info">
+        <div class="file-copy">
+          <strong :title="media?.name">{{ media?.name || "未选择文件" }}</strong>
+          <span :title="media?.path">{{ media?.path || "从右侧章节列表选择一个可播放文件" }}</span>
+        </div>
+
+        <div class="file-actions">
+          <el-button :icon="ArrowLeft" :disabled="!media">上一文件</el-button>
+          <el-button type="primary" :icon="ArrowRight" :disabled="!media">下一文件</el-button>
+        </div>
+
+        <div class="meta-row">
+          <span>{{ engineName }}</span>
+          <span>1920x1080</span>
+          <span>45:30</span>
+          <span><el-icon><Calendar /></el-icon> 2024-01-15</span>
+          <span>1.2GB</span>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -22,22 +75,157 @@ defineProps<{
 .playback-surface {
   display: grid;
   min-height: 0;
+}
+
+.video-card {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  background: rgba(16, 23, 34, 0.72);
+}
+
+.player-stage {
+  position: relative;
+  display: grid;
+  min-height: 0;
   place-items: center;
-  background: #111820;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0) 28%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0) 34%),
+    #080b10;
 }
 
 .video-element {
   width: 100%;
   height: 100%;
-  background: #111820;
+  background: #080b10;
 }
 
-.empty-state {
+.empty-stage {
   display: flex;
   align-items: center;
+  max-width: 340px;
   flex-direction: column;
-  gap: 12px;
-  color: #c8d2dc;
+  gap: 10px;
+  padding: 28px;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.empty-stage strong {
+  color: #f8fafc;
+  font-size: 16px;
+}
+
+.empty-stage span {
+  color: #95a7bd;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.empty-icon {
+  display: grid;
+  width: 66px;
+  height: 66px;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #cfe1ff;
+}
+
+.stage-top {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.stage-top span {
+  padding: 5px 9px;
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.66);
+  color: #e5edf8;
+  font-size: 12px;
+}
+
+.stage-tools {
+  display: flex;
+  gap: 14px;
+  color: #d8e5f7;
+  font-size: 18px;
+}
+
+.media-info {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  padding: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.file-copy {
+  min-width: 0;
+}
+
+.file-copy strong {
+  overflow: hidden;
+  display: block;
+  color: var(--ocp-text-inverse);
   font-size: 14px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-copy span {
+  overflow: hidden;
+  display: block;
+  margin-top: 5px;
+  color: var(--ocp-text-inverse-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-actions :deep(.el-button) {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.meta-row {
+  display: flex;
+  min-width: 0;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.meta-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #a6b6ca;
+  font-size: 11px;
 }
 </style>

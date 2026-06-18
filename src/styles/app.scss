@@ -3,12 +3,32 @@
   font-family:
     Inter, "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont,
     sans-serif;
-  color: #17202a;
-  background: #f4f6f8;
+  color: var(--ocp-text);
+  background: var(--ocp-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  --ocp-bg: #0f1117;
+  --ocp-shell: #171b22;
+  --ocp-sidebar: #171b22;
+  --ocp-sidebar-panel: #232a36;
+  --ocp-surface: #ffffff;
+  --ocp-surface-2: #f4f7fb;
+  --ocp-surface-3: #eaf0f7;
+  --ocp-border: #d7e0eb;
+  --ocp-border-strong: #b9c7d8;
+  --ocp-dark-border: #232a36;
+  --ocp-text: #152033;
+  --ocp-text-muted: #65758a;
+  --ocp-text-inverse: #eef5ff;
+  --ocp-text-inverse-muted: #92a5bd;
+  --ocp-primary: #3b82f6;
+  --ocp-primary-hover: #2f6fe0;
+  --ocp-primary-soft: #e7f0ff;
+  --ocp-player-bg: #0f1117;
+  --ocp-player-panel: #171b22;
+  --ocp-danger: #ef4444;
 }
 
 * {
@@ -32,8 +52,54 @@ select {
 
 body {
   overflow: hidden;
+  background: var(--ocp-bg);
+}
+
+button {
+  border: 0;
 }
 
 .el-button {
+  --el-button-border-radius: 6px;
+  min-height: 32px;
   letter-spacing: 0;
+}
+
+.el-button--primary {
+  --el-button-bg-color: var(--ocp-primary);
+  --el-button-border-color: var(--ocp-primary);
+  --el-button-hover-bg-color: var(--ocp-primary-hover);
+  --el-button-hover-border-color: var(--ocp-primary-hover);
+}
+
+.el-button.is-circle {
+  width: 36px;
+  height: 36px;
+}
+
+.el-input__wrapper,
+.el-select__wrapper {
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px var(--ocp-border) inset;
+}
+
+.el-input__wrapper:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--ocp-border-strong) inset;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--ocp-primary) inset;
+}
+
+.el-slider__bar {
+  background-color: var(--ocp-primary);
+}
+
+.el-slider__button {
+  border-color: var(--ocp-primary);
+}
+
+.el-empty__description p {
+  color: var(--ocp-text-inverse-muted);
 }

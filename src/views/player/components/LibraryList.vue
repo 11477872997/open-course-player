@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { Collection, Delete, FolderAdd, Refresh, VideoCamera } from "@element-plus/icons-vue";
+import {
+  Collection,
+  Delete,
+  FolderAdd,
+  Refresh
+} from "@element-plus/icons-vue";
 import type { MediaLibraryRoot } from "../../../types/media";
 
-defineProps<{
+const props = defineProps<{
   roots: MediaLibraryRoot[];
   activeRootId: string;
   loading: boolean;
@@ -16,69 +21,35 @@ const emit = defineEmits<{
   remove: [root: MediaLibraryRoot];
 }>();
 
-function pathTail(path: string) {
-  const parts = path.split(/[\\\/]/).filter(Boolean);
-  return parts.slice(-2).join(" / ") || path;
+function refreshActiveRoot() {
+  const root = props.roots.find((item) => item.id === props.activeRootId);
+  if (root) emit("refresh", root);
 }
 </script>
 
 <template>
   <aside class="library-list">
-    <header class="app-brand">
-      <img src="../../../assets/brand/cd-player.png" alt="" />
-      <div>
-        <strong>Open Course Player</strong>
-        <span>本地课程播放器</span>
-      </div>
-    </header>
-
-    <section class="library-summary">
-      <div>
+    <div class="sidebar-section">
+      <div class="section-title">
         <span>资料库</span>
-        <strong>{{ roots.length }}</strong>
+        <el-tooltip content="添加文件夹" placement="right">
+          <button class="plain-icon" type="button" @click="emit('add')">+</button>
+        </el-tooltip>
       </div>
-      <div>
-        <span>可播放</span>
-        <strong>{{ totalPlayableFiles }}</strong>
-      </div>
-    </section>
 
-    <div class="library-actions">
-      <el-button type="primary" :icon="FolderAdd" @click="emit('add')">添加文件夹</el-button>
-      <el-tooltip content="刷新当前资料库" placement="bottom">
-        <el-button
-          :icon="Refresh"
-          :disabled="!activeRootId || loading"
-          @click="roots.find((root) => root.id === activeRootId) && emit('refresh', roots.find((root) => root.id === activeRootId)!)"
-        />
-      </el-tooltip>
-    </div>
-
-    <div class="section-title">
-      <el-icon><Collection /></el-icon>
-      <span>课程文件夹</span>
-    </div>
-
-    <div v-if="roots.length" class="root-list">
       <button
         v-for="root in roots"
         :key="root.id"
-        class="root-item"
-        :class="{ active: root.id === activeRootId }"
+        class="nav-item root"
+        :class="{ selected: root.id === activeRootId }"
         type="button"
         @click="emit('select', root)"
       >
-        <span class="active-mark" />
-        <span class="root-icon">
-          <el-icon><VideoCamera /></el-icon>
-        </span>
-        <span class="root-main">
-          <strong :title="root.name">{{ root.name }}</strong>
-          <small :title="root.path">{{ pathTail(root.path) }}</small>
-          <em>{{ root.playableFiles }} 个可播放</em>
-        </span>
-        <el-tooltip content="移除资料库" placement="right">
-          <span
+        <el-icon><Collection /></el-icon>
+        <span :title="root.path">{{ root.name }}</span>
+        <em>{{ root.playableFiles }}</em>
+        <el-tooltip content="移除" placement="right">
+          <i
             class="remove"
             role="button"
             tabindex="0"
@@ -86,15 +57,33 @@ function pathTail(path: string) {
             @keydown.enter.stop="emit('remove', root)"
           >
             <el-icon><Delete /></el-icon>
-          </span>
+          </i>
         </el-tooltip>
       </button>
+
+      <button v-if="roots.length" class="nav-item compact" type="button" @click="refreshActiveRoot">
+        <el-icon><Refresh /></el-icon>
+        <span>刷新当前</span>
+        <em>{{ loading ? "..." : "" }}</em>
+      </button>
+
+      <div v-if="!roots.length" class="empty-library">
+        <el-icon><FolderAdd /></el-icon>
+        <strong>暂无资料库</strong>
+        <span>点击右上角 + 添加本地文件夹</span>
+      </div>
     </div>
 
-    <div v-else class="empty-library">
-      <span>还没有资料库</span>
-      <small>添加一个或多个课程文件夹后开始浏览</small>
+    <div class="brand-placeholder">
+      <img src="../../../assets/brand/cd-player.png" alt="" />
+      <strong>Open Course Player</strong>
+      <span>本地文件播放</span>
     </div>
+
+    <button class="add-folder" type="button" @click="emit('add')">
+      <el-icon><FolderAdd /></el-icon>
+      <span>添加文件夹</span>
+    </button>
   </aside>
 </template>
 
@@ -102,178 +91,180 @@ function pathTail(path: string) {
 .library-list {
   display: grid;
   min-width: 0;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
-  gap: 14px;
-  padding: 14px;
-  border-right: 1px solid var(--ocp-border);
-  background: #fbfcfe;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px 10px;
+  border-right: 1px solid var(--ocp-dark-border);
+  background: rgba(10, 16, 24, 0.62);
 }
 
-.app-brand {
+.sidebar-section {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-}
-
-.app-brand img {
-  width: 40px;
-  height: 40px;
-}
-
-.app-brand strong,
-.root-main strong {
-  overflow: hidden;
-  display: block;
-  color: var(--ocp-text);
-  font-size: 14px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app-brand span,
-.root-main small,
-.root-main em,
-.empty-library small {
-  overflow: hidden;
-  display: block;
-  color: var(--ocp-text-muted);
-  font-size: 12px;
-  font-style: normal;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.library-summary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.library-summary div {
+  align-content: start;
+  gap: 6px;
   min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--ocp-border);
-  border-radius: 8px;
-  background: var(--ocp-surface);
-}
-
-.library-summary span {
-  display: block;
-  color: var(--ocp-text-muted);
-  font-size: 12px;
-}
-
-.library-summary strong {
-  display: block;
-  margin-top: 4px;
-  color: var(--ocp-text);
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.library-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px;
-  gap: 8px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .section-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: #405063;
+  justify-content: space-between;
+  min-height: 26px;
+  padding: 0 4px;
+  color: var(--ocp-text-inverse-muted);
   font-size: 12px;
-  font-weight: 700;
 }
 
-.root-list {
-  min-height: 0;
-  overflow: auto;
-  padding-right: 2px;
+.plain-icon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ocp-text-inverse-muted);
+  cursor: pointer;
 }
 
-.root-item {
+.plain-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ocp-text-inverse);
+}
+
+.nav-item {
   position: relative;
   display: grid;
   width: 100%;
   min-width: 0;
-  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
-  margin-bottom: 8px;
-  padding: 10px 8px 10px 10px;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 9px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
-  color: inherit;
+  color: #a6b4c7;
   cursor: pointer;
   text-align: left;
 }
 
-.root-item:hover {
-  background: #f1f5f9;
+.nav-item span {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.root-item.active {
-  border-color: #bdd1ff;
-  background: var(--ocp-primary-soft);
+.nav-item em {
+  color: #8ba0b8;
+  font-size: 12px;
+  font-style: normal;
 }
 
-.active-mark {
-  position: absolute;
-  inset: 10px auto 10px 0;
-  width: 3px;
-  border-radius: 999px;
-  background: transparent;
+.nav-item:hover,
+.nav-item.selected {
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--ocp-text-inverse);
 }
 
-.root-item.active .active-mark {
-  background: var(--ocp-primary);
+.nav-item.compact {
+  color: #7f92aa;
 }
 
-.root-icon {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 6px;
-  background: #eef3f8;
-  color: #4b6078;
+.nav-item.muted {
+  color: #98a7ba;
 }
 
-.root-item.active .root-icon {
-  background: #dce8ff;
-  color: var(--ocp-primary);
+.nav-item.root {
+  grid-template-columns: 18px minmax(0, 1fr) auto 18px;
 }
 
 .remove {
-  display: grid;
-  width: 26px;
-  height: 26px;
+  display: none;
+  width: 18px;
+  height: 18px;
   place-items: center;
-  border-radius: 6px;
-  color: #8b98a7;
+  border-radius: 4px;
+  color: #7d90a7;
+}
+
+.nav-item.root:hover .remove {
+  display: grid;
 }
 
 .remove:hover {
-  background: #fee2e2;
-  color: var(--ocp-danger);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
 }
 
 .empty-library {
-  display: flex;
-  min-height: 180px;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 6px;
-  padding: 20px;
-  border: 1px dashed var(--ocp-border);
-  border-radius: 8px;
-  color: var(--ocp-text);
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 18px 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  color: var(--ocp-text-inverse-muted);
   text-align: center;
+}
+
+.empty-library .el-icon {
+  font-size: 24px;
+}
+
+.empty-library strong {
+  color: var(--ocp-text-inverse);
+  font-size: 12px;
+}
+
+.empty-library span {
+  color: var(--ocp-text-inverse-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.brand-placeholder {
+  display: grid;
+  align-self: end;
+  min-width: 0;
+  justify-items: center;
+  gap: 5px;
+  padding: 14px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(59, 130, 246, 0.07), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.035);
+  text-align: center;
+}
+
+.brand-placeholder img {
+  width: 42px;
+  height: 42px;
+  opacity: 0.95;
+}
+
+.brand-placeholder strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ocp-text-inverse);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-placeholder span {
+  color: var(--ocp-text-inverse-muted);
+  font-size: 11px;
+}
+
+.add-folder {
+  display: none;
 }
 </style>

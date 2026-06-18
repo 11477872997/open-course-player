@@ -13,10 +13,12 @@
     "windows": [
       {
         "title": "open-course-player",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 960,
-        "minHeight": 640
+        "width": 950,
+        "height": 650,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": false,
+        "shadow": true
       }
     ],
     "security": {

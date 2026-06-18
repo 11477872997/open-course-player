@@ -75,6 +75,9 @@ export const useLibraryStore = defineStore("library", {
     selectMedia(media: SelectedMedia) {
       this.selectedMedia = media;
     },
+    clearSelectedMedia() {
+      this.selectedMedia = null;
+    },
     removeRoot(id: string) {
       this.roots = this.roots.filter((root) => root.id !== id);
       if (this.activeRootId === id) {

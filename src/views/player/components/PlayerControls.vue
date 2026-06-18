@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import {
+  DArrowLeft,
+  DArrowRight,
   FullScreen,
   Headset,
+  Timer,
   VideoPause,
-  VideoPlay,
-  DArrowLeft,
-  DArrowRight
+  VideoPlay
 } from "@element-plus/icons-vue";
 
 defineProps<{
@@ -15,6 +16,11 @@ defineProps<{
 
 <template>
   <footer class="player-controls">
+    <div class="time-readout">
+      <el-icon><Timer /></el-icon>
+      <span>08:24 / 45:30</span>
+    </div>
+
     <div class="transport">
       <el-tooltip content="后退" placement="top">
         <el-button circle :icon="DArrowLeft" :disabled="disabled" />
@@ -30,11 +36,10 @@ defineProps<{
       </el-tooltip>
     </div>
 
-    <el-slider class="progress" :model-value="0" :disabled="disabled" />
+    <el-slider class="progress" :model-value="32" :disabled="disabled" />
 
     <div class="side-controls">
-      <el-icon :size="18"><Headset /></el-icon>
-      <el-slider class="volume" :model-value="80" :disabled="disabled" />
+      <el-icon :size="16"><Headset /></el-icon>
       <el-select model-value="1" class="speed" :disabled="disabled" size="small">
         <el-option label="0.75x" value="0.75" />
         <el-option label="1.0x" value="1" />
@@ -52,43 +57,79 @@ defineProps<{
 <style scoped lang="scss">
 .player-controls {
   display: grid;
-  min-height: 72px;
-  grid-template-columns: auto minmax(140px, 1fr) auto;
+  min-height: 42px;
+  grid-template-columns: auto auto minmax(120px, 1fr) auto;
   align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  border-top: 1px solid #d9e0e7;
-  background: #ffffff;
+  gap: 10px;
+  padding: 8px 2px 0;
+  background: transparent;
 }
 
+.time-readout,
 .transport,
 .side-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+}
+
+.time-readout,
+.side-controls {
+  color: var(--ocp-text-inverse-muted);
+}
+
+.time-readout {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.transport :deep(.el-button),
+.side-controls :deep(.el-button) {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  --el-button-bg-color: rgba(255, 255, 255, 0.055);
+  --el-button-border-color: rgba(148, 163, 184, 0.18);
+  --el-button-text-color: #d8e5f7;
+  --el-button-hover-bg-color: rgba(255, 255, 255, 0.1);
+  --el-button-hover-border-color: rgba(148, 163, 184, 0.34);
+  --el-button-hover-text-color: #ffffff;
+}
+
+.transport :deep(.el-button--primary) {
+  --el-button-bg-color: var(--ocp-primary);
+  --el-button-border-color: var(--ocp-primary);
+  --el-button-hover-bg-color: var(--ocp-primary-hover);
+  --el-button-hover-border-color: var(--ocp-primary-hover);
 }
 
 .progress {
-  min-width: 140px;
+  min-width: 120px;
 }
 
-.volume {
-  width: 92px;
+.progress :deep(.el-slider__runway) {
+  height: 3px;
+  background-color: rgba(148, 163, 184, 0.24);
+}
+
+.progress :deep(.el-slider__button) {
+  width: 10px;
+  height: 10px;
 }
 
 .speed {
-  width: 88px;
+  width: 58px;
 }
 
-@media (max-width: 860px) {
-  .player-controls {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
+.speed :deep(.el-select__wrapper) {
+  min-height: 28px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.18) inset;
+}
 
-  .transport,
-  .side-controls {
-    justify-content: center;
-  }
+.speed :deep(.el-select__selected-item) {
+  color: #d8e5f7;
+  font-size: 11px;
 }
 </style>

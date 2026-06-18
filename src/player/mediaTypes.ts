@@ -57,8 +57,8 @@ export function describeEngine(engine: PlayerEngine | "unsupported") {
     case "mpv":
       return "mpv";
     case "web-video":
-      return "内置";
+      return "\u5185\u7f6e";
     default:
-      return "不支持";
+      return "\u4e0d\u652f\u6301";
   }
 }
