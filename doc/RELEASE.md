@@ -10,6 +10,22 @@ Windows x64 安装包
 
 macOS 和 Linux 是后续目标，必须分别验证播放和打包后才能发布。
 
+## 发布仓库
+
+源码仓库和 Release 发布目标：
+
+```text
+https://github.com/11477872997/open-course-player.git
+```
+
+Git remote 建议：
+
+```powershell
+git remote add origin https://github.com/11477872997/open-course-player.git
+```
+
+公开版本统一通过 GitHub Releases 发布。每次正式发布必须有对应 tag、发布说明、安装包和校验和。
+
 ## 构建命令
 
 正式命令在项目实现后确定。预期形态：
@@ -43,6 +59,14 @@ pnpm run tauri:build
 - 主版本：不兼容的数据或行为变化。
 - 次版本：新增功能或格式支持。
 - 修订版本：修复和小兼容性改进。
+
+Git tag 使用 `v` 前缀：
+
+```text
+v0.1.0
+v0.2.0
+v1.0.0
+```
 
 ## 发布前检查
 
