@@ -11,44 +11,92 @@ import {
 
 defineProps<{
   disabled: boolean;
+  playing: boolean;
+  currentTime: number;
+  duration: number;
+  volume: number;
+  playbackRate: number;
 }>();
+
+const emit = defineEmits<{
+  playPause: [];
+  previous: [];
+  next: [];
+  seek: [value: number];
+  volume: [value: number];
+  rate: [value: number];
+  fullscreen: [];
+}>();
+
+function formatTime(seconds: number) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "00:00";
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
 </script>
 
 <template>
   <footer class="player-controls">
     <div class="time-readout">
       <el-icon><Timer /></el-icon>
-      <span>08:24 / 45:30</span>
+      <span>{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
     </div>
 
     <div class="transport">
-      <el-tooltip content="后退" placement="top">
-        <el-button circle :icon="DArrowLeft" :disabled="disabled" />
+      <el-tooltip content="上一个文件" placement="top">
+        <el-button circle :icon="DArrowLeft" :disabled="disabled" @click="emit('previous')" />
       </el-tooltip>
-      <el-tooltip content="播放" placement="top">
-        <el-button circle type="primary" :icon="VideoPlay" :disabled="disabled" />
+      <el-tooltip :content="playing ? '暂停' : '播放'" placement="top">
+        <el-button
+          circle
+          type="primary"
+          :icon="playing ? VideoPause : VideoPlay"
+          :disabled="disabled"
+          @click="emit('playPause')"
+        />
       </el-tooltip>
-      <el-tooltip content="暂停" placement="top">
-        <el-button circle :icon="VideoPause" :disabled="disabled" />
-      </el-tooltip>
-      <el-tooltip content="前进" placement="top">
-        <el-button circle :icon="DArrowRight" :disabled="disabled" />
+      <el-tooltip content="下一个文件" placement="top">
+        <el-button circle :icon="DArrowRight" :disabled="disabled" @click="emit('next')" />
       </el-tooltip>
     </div>
 
-    <el-slider class="progress" :model-value="32" :disabled="disabled" />
+    <el-slider
+      class="progress"
+      :model-value="currentTime"
+      :max="duration || 0"
+      :disabled="disabled || !duration"
+      :show-tooltip="false"
+      @input="(value: number | number[]) => emit('seek', Number(value))"
+    />
 
     <div class="side-controls">
       <el-icon :size="16"><Headset /></el-icon>
-      <el-select model-value="1" class="speed" :disabled="disabled" size="small">
+      <el-slider
+        class="volume"
+        :model-value="volume"
+        :max="1"
+        :step="0.01"
+        :disabled="disabled"
+        :show-tooltip="false"
+        @input="(value: number | number[]) => emit('volume', Number(value))"
+      />
+      <el-select
+        :model-value="String(playbackRate)"
+        class="speed"
+        :disabled="disabled"
+        size="small"
+        @change="(value: string) => emit('rate', Number(value))"
+      >
         <el-option label="0.75x" value="0.75" />
         <el-option label="1.0x" value="1" />
         <el-option label="1.25x" value="1.25" />
         <el-option label="1.5x" value="1.5" />
         <el-option label="2.0x" value="2" />
       </el-select>
-      <el-tooltip content="全屏" placement="top">
-        <el-button circle :icon="FullScreen" :disabled="disabled" />
+      <el-tooltip content="全屏播放" placement="top">
+        <el-button circle :icon="FullScreen" :disabled="disabled" @click="emit('fullscreen')" />
       </el-tooltip>
     </div>
   </footer>
@@ -107,12 +155,18 @@ defineProps<{
   min-width: 120px;
 }
 
-.progress :deep(.el-slider__runway) {
+.volume {
+  width: 72px;
+}
+
+.progress :deep(.el-slider__runway),
+.volume :deep(.el-slider__runway) {
   height: 3px;
   background-color: rgba(148, 163, 184, 0.24);
 }
 
-.progress :deep(.el-slider__button) {
+.progress :deep(.el-slider__button),
+.volume :deep(.el-slider__button) {
   width: 10px;
   height: 10px;
 }

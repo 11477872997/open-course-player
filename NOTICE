@@ -1,6 +1,6 @@
 open-course-player
 
-open-course-player 是一个面向本地课程目录和媒体目录的开源桌面播放器。
+open-course-player 是一个面向本地文件目录和媒体目录的开源桌面播放器。
 
 项目计划使用 Tauri、Vue、Element Plus、mpegts.js、hls.js，以及 mpv/FFmpeg
 相关播放组件。第三方声明统一维护在 THIRD_PARTY_NOTICES.md。

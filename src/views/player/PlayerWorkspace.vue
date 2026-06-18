@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ElMessage } from "element-plus";
-import { Close, Minus, Refresh, Search, SwitchButton } from "@element-plus/icons-vue";
+import { FullScreen, Minus, Refresh, Search, SwitchButton } from "@element-plus/icons-vue";
 import LibraryList from "./components/LibraryList.vue";
 import FileTree from "./components/FileTree.vue";
 import PlaybackSurface from "./components/PlaybackSurface.vue";
@@ -130,8 +130,10 @@ function toggleMaximizeWindow() {
   void appWindow?.toggleMaximize();
 }
 
-function closeWindow() {
-  void appWindow?.close();
+async function toggleFullscreenWindow() {
+  if (!appWindow) return;
+  const fullscreen = await appWindow.isFullscreen();
+  await appWindow.setFullscreen(!fullscreen);
 }
 </script>
 
@@ -157,7 +159,7 @@ function closeWindow() {
         <div class="window-actions">
           <el-button :icon="Minus" @click="minimizeWindow" />
           <el-button :icon="SwitchButton" @click="toggleMaximizeWindow" />
-          <el-button class="close-button" :icon="Close" @click="closeWindow" />
+          <el-button :icon="FullScreen" @click="toggleFullscreenWindow" />
         </div>
       </header>
 
@@ -313,11 +315,6 @@ function closeWindow() {
 .window-actions :deep(.el-button:hover) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--ocp-text-inverse);
-}
-
-.window-actions :deep(.close-button:hover) {
-  background: rgba(239, 68, 68, 0.22);
-  color: #ffffff;
 }
 
 .workspace-grid {
