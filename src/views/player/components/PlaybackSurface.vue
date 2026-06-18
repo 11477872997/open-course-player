@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import type { ComponentPublicInstance } from "vue";
-import { ArrowLeft, ArrowRight, Calendar, FolderAdd, FullScreen, Monitor, VideoCamera } from "@element-plus/icons-vue";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  FolderAdd,
+  FullScreen,
+  Monitor,
+  VideoPause,
+  VideoPlay
+} from "@element-plus/icons-vue";
 import type { SelectedMedia } from "../../../types/media";
 
 defineProps<{
@@ -58,8 +67,8 @@ function formatDuration(seconds: number) {
 
         <button v-if="media && sourceUrl" class="center-play" type="button" @click="emit('playPause')">
           <el-icon :size="44">
-            <VideoCamera v-if="playing" />
-            <Monitor v-else />
+            <VideoPause v-if="playing" />
+            <VideoPlay v-else />
           </el-icon>
         </button>
 

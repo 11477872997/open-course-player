@@ -4,7 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ElMessage } from "element-plus";
-import { FullScreen, Minus, Refresh, Search, SwitchButton } from "@element-plus/icons-vue";
+import { Close, FullScreen, Minus, Refresh, Search } from "@element-plus/icons-vue";
 import Hls from "hls.js";
 import mpegts from "mpegts.js";
 import LibraryList from "./components/LibraryList.vue";
@@ -314,31 +314,47 @@ function flattenPlayableNodes(nodes: MediaTreeNode[]) {
 
 function startDrag(event: MouseEvent) {
   if ((event.target as HTMLElement).closest("button, input, .el-input, .window-actions")) return;
-  void appWindow?.startDragging();
+  if (!appWindow) return;
+
+  appWindow.startDragging().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("窗口拖动失败", message);
+  });
 }
 
 function minimizeWindow() {
-  void appWindow?.minimize();
-}
-
-function toggleMaximizeWindow() {
-  void appWindow?.toggleMaximize();
+  if (!appWindow) return;
+  appWindow.minimize().catch(showWindowActionError);
 }
 
 async function toggleFullscreenWindow() {
   if (!appWindow) return;
-  const fullscreen = await appWindow.isFullscreen();
-  await appWindow.setFullscreen(!fullscreen);
+  try {
+    const fullscreen = await appWindow.isFullscreen();
+    await appWindow.setFullscreen(!fullscreen);
+  } catch (error) {
+    showWindowActionError(error);
+  }
+}
+
+function closeWindow() {
+  if (!appWindow) return;
+  appWindow.close().catch(showWindowActionError);
+}
+
+function showWindowActionError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  ElMessage.warning(`窗口操作失败：${message}`);
 }
 </script>
 
 <template>
   <main class="player-shell">
     <section class="player-window">
-      <header class="window-toolbar" @mousedown.left="startDrag" @dblclick="toggleMaximizeWindow">
-        <div class="brand-mini">
+      <header class="window-toolbar" data-tauri-drag-region @mousedown.left="startDrag">
+        <div class="brand-mini" data-tauri-drag-region>
           <img src="../../assets/brand/cd-player.png" alt="" />
-          <strong>Open Course Player</strong>
+          <strong data-tauri-drag-region>Open Course Player</strong>
         </div>
 
         <el-input
@@ -351,8 +367,8 @@ async function toggleFullscreenWindow() {
 
         <div class="window-actions">
           <el-button :icon="Minus" @click="minimizeWindow" />
-          <el-button :icon="SwitchButton" @click="toggleMaximizeWindow" />
           <el-button :icon="FullScreen" @click="toggleFullscreenWindow" />
+          <el-button class="close-button" :icon="Close" @click="closeWindow" />
         </div>
       </header>
 
@@ -521,6 +537,11 @@ async function toggleFullscreenWindow() {
 .window-actions :deep(.el-button:hover) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--ocp-text-inverse);
+}
+
+.window-actions :deep(.close-button:hover) {
+  background: rgba(239, 68, 68, 0.22);
+  color: #ffffff;
 }
 
 .workspace-grid {
