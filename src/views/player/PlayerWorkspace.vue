@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
-import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ElMessage } from "element-plus";
 import { Close, FullScreen, Minus, Refresh, Search } from "@element-plus/icons-vue";
@@ -13,11 +13,15 @@ import PlaybackSurface from "./components/PlaybackSurface.vue";
 import PlayerControls from "./components/PlayerControls.vue";
 import { revealPathInFileManager } from "../../api/fileLocation";
 import { scanMediaRoot } from "../../api/mediaLibrary";
+import { createMediaSource } from "../../api/mediaServer";
 import { playWithMpv } from "../../api/mpv";
+import { loadPlaybackHistory, savePlaybackHistory } from "../../api/playbackHistory";
+import { createSubtitleSource, findSubtitleTracks } from "../../api/subtitles";
 import { describeEngine } from "../../player/mediaTypes";
 import { choosePlayback } from "../../player/playbackRouter";
 import { useLibraryStore } from "../../store/modules/library";
 import type { MediaLibraryRoot, MediaTreeNode, SelectedMedia } from "../../types/media";
+import type { SubtitleTrackInfo } from "../../api/subtitles";
 
 const library = useLibraryStore();
 const appWindow = isTauri() ? getCurrentWindow() : null;
@@ -26,16 +30,34 @@ const searchKeyword = ref("");
 const playbackMessage = ref("添加本地文件夹后开始播放");
 const mediaElement = ref<HTMLMediaElement | null>(null);
 const mediaSourceUrl = ref("");
+const subtitleUrl = ref("");
+const subtitleLabel = ref("");
+const subtitleTracks = ref<SubtitleTrackInfo[]>([]);
 const playing = ref(false);
 const currentTime = ref(0);
 const duration = ref(0);
 const volume = ref(0.8);
 const playbackRate = ref(1);
 const playerFullscreen = ref(false);
+const historyReady = ref(false);
+const contextMenu = ref<{
+  visible: boolean;
+  x: number;
+  y: number;
+  target: MediaTreeNode | MediaLibraryRoot | null;
+  type: "file" | "library";
+}>({
+  visible: false,
+  x: 0,
+  y: 0,
+  target: null,
+  type: "file"
+});
 
 let hlsPlayer: Hls | null = null;
 let mpegtsPlayer: mpegts.Player | null = null;
 let playbackSyncTimer: number | null = null;
+let historySaveTimer: number | null = null;
 
 const activeRoot = computed(() => library.activeRoot);
 const selectedEngineName = computed(() =>
@@ -60,12 +82,16 @@ watch(
 
 onBeforeUnmount(() => {
   document.removeEventListener("fullscreenchange", syncFullscreenState);
+  document.removeEventListener("click", closeContextMenu);
   stopPlaybackSync();
+  stopHistorySaveTimer();
   destroyPlaybackAdapters();
 });
 
 onMounted(() => {
   document.addEventListener("fullscreenchange", syncFullscreenState);
+  document.addEventListener("click", closeContextMenu);
+  void restorePlaybackHistory();
 });
 
 async function chooseFolder() {
@@ -82,13 +108,14 @@ async function chooseFolder() {
   }
 }
 
-async function loadFolder(rootPath: string) {
+async function loadFolder(rootPath: string, options: { persist?: boolean } = {}) {
   if (!rootPath) return;
 
   loadingRootId.value = rootPath;
   try {
     const nodes = await scanMediaRoot(rootPath);
     library.upsertRoot(rootPath, nodes);
+    if (options.persist !== false) scheduleHistorySave();
     playbackMessage.value = nodes.length ? "选择文件开始播放" : "该目录没有发现可播放文件";
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -105,6 +132,7 @@ function refreshRoot(root = activeRoot.value) {
 
 function selectRoot(root: MediaLibraryRoot) {
   library.setActiveRoot(root.id);
+  scheduleHistorySave();
 }
 
 function removeRoot(root: MediaLibraryRoot) {
@@ -112,6 +140,7 @@ function removeRoot(root: MediaLibraryRoot) {
   if (library.selectedMedia?.path.startsWith(root.path)) {
     library.clearSelectedMedia();
   }
+  scheduleHistorySave();
 }
 
 function handleSelect(node: MediaTreeNode) {
@@ -131,11 +160,12 @@ function handleSelect(node: MediaTreeNode) {
   };
 
   library.selectMedia(media);
+  scheduleHistorySave();
   const decision = choosePlayback(media);
   playbackMessage.value = decision.reason;
 }
 
-async function openMediaLocation(target?: MediaTreeNode | SelectedMedia | null) {
+async function openMediaLocation(target?: { path: string } | null) {
   const path = target?.path || library.selectedMedia?.path;
   if (!path) {
     ElMessage.info("请先选择一个文件");
@@ -154,6 +184,9 @@ async function loadSelectedMedia(media: SelectedMedia | null) {
   destroyPlaybackAdapters();
   stopPlaybackSync();
   mediaSourceUrl.value = "";
+  subtitleUrl.value = "";
+  subtitleLabel.value = "";
+  subtitleTracks.value = [];
   playing.value = false;
   currentTime.value = 0;
   duration.value = 0;
@@ -181,11 +214,41 @@ async function loadSelectedMedia(media: SelectedMedia | null) {
   }
 
   const sourcePath = normalizeLocalPath(media.path);
-  const sourceUrl = isTauri() ? convertFileSrc(sourcePath) : sourcePath;
+  const source = isTauri()
+    ? await createMediaSource(sourcePath)
+    : { url: sourcePath, duration: null, size: null, mime: null };
+  const sourceUrl = source.url;
   mediaSourceUrl.value = sourceUrl;
+  const measuredDuration = normalizeDuration(source.duration ?? undefined, 0);
+  if (measuredDuration > 0) duration.value = measuredDuration;
+  const playableMedia: SelectedMedia = {
+    ...media,
+    duration: measuredDuration || media.duration,
+    size: source.size ?? media.size,
+    mime: source.mime ?? media.mime
+  };
   playbackMessage.value = "媒体已加载";
+  await loadAutoSubtitle(playableMedia);
   await nextTick();
-  attachPlaybackAdapter(media, sourceUrl);
+  attachPlaybackAdapter(playableMedia, sourceUrl);
+}
+
+async function loadAutoSubtitle(media: SelectedMedia) {
+  if (media.kind !== "video" || !isTauri()) return;
+
+  try {
+    const tracks = await findSubtitleTracks(normalizeLocalPath(media.path));
+    subtitleTracks.value = tracks;
+    const preferred = tracks.find((track) => track.format === "vtt" || track.format === "srt");
+    if (!preferred) return;
+
+    const source = await createSubtitleSource(normalizeLocalPath(preferred.path));
+    subtitleUrl.value = source.url;
+    subtitleLabel.value = preferred.label;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("字幕加载失败", message);
+  }
 }
 
 function attachPlaybackAdapter(media: SelectedMedia, sourceUrl: string) {
@@ -207,7 +270,9 @@ function attachPlaybackAdapter(media: SelectedMedia, sourceUrl: string) {
     mpegtsPlayer = mpegts.createPlayer({
       type: "mpegts",
       url: sourceUrl,
-      isLive: false
+      isLive: false,
+      duration: media.duration ? media.duration * 1000 : undefined,
+      filesize: media.size ?? undefined
     }, {
       seekType: "range",
       rangeLoadZeroStart: true,
@@ -466,6 +531,113 @@ function closeWindow() {
   appWindow.close().catch(showWindowActionError);
 }
 
+function showFileContextMenu(node: MediaTreeNode, event: MouseEvent) {
+  contextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    target: node,
+    type: "file"
+  };
+}
+
+function showLibraryContextMenu(root: MediaLibraryRoot, event: MouseEvent) {
+  contextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    target: root,
+    type: "library"
+  };
+}
+
+function closeContextMenu() {
+  contextMenu.value.visible = false;
+}
+
+async function openContextMenuLocation() {
+  const target = contextMenu.value.target;
+  closeContextMenu();
+  await openMediaLocation(target);
+}
+
+async function restorePlaybackHistory() {
+  if (!isTauri()) {
+    historyReady.value = true;
+    return;
+  }
+
+  try {
+    const history = await loadPlaybackHistory();
+    const roots = history.roots.filter(Boolean);
+    if (!roots.length) {
+      historyReady.value = true;
+      return;
+    }
+
+    for (const root of roots) {
+      await loadFolder(root, { persist: false });
+    }
+
+    if (history.activeRootPath) {
+      library.setActiveRoot(history.activeRootPath);
+    }
+
+    if (history.lastMediaPath) {
+      const restored = findNodeByPath(library.roots.flatMap((root) => root.nodes), history.lastMediaPath);
+      if (restored?.playable && restored.kind !== "folder") {
+        handleSelect(restored);
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("恢复历史记录失败", message);
+  } finally {
+    historyReady.value = true;
+    scheduleHistorySave();
+  }
+}
+
+function scheduleHistorySave() {
+  if (!isTauri() || !historyReady.value) return;
+
+  stopHistorySaveTimer();
+  historySaveTimer = window.setTimeout(() => {
+    void persistPlaybackHistory();
+  }, 250);
+}
+
+function stopHistorySaveTimer() {
+  if (historySaveTimer === null) return;
+  window.clearTimeout(historySaveTimer);
+  historySaveTimer = null;
+}
+
+async function persistPlaybackHistory() {
+  try {
+    await savePlaybackHistory({
+      roots: library.roots.map((root) => root.path),
+      activeRootPath: library.activeRoot?.path ?? null,
+      lastMediaPath: library.selectedMedia?.path ?? null
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("保存历史记录失败", message);
+  }
+}
+
+function findNodeByPath(nodes: MediaTreeNode[], path: string): MediaTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node;
+    if (node.children?.length) {
+      const matched = findNodeByPath(node.children, path);
+      if (matched) return matched;
+    }
+  }
+
+  return null;
+}
+
 function showWindowActionError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   ElMessage.warning(`窗口操作失败：${message}`);
@@ -506,12 +678,15 @@ function showWindowActionError(error: unknown) {
           @refresh="refreshRoot"
           @select="selectRoot"
           @remove="removeRoot"
+          @context-menu="showLibraryContextMenu"
         />
 
         <section class="player-column">
           <PlaybackSurface
             :media="library.selectedMedia"
             :source-url="mediaSourceUrl"
+            :subtitle-url="subtitleUrl"
+            :subtitle-label="subtitleLabel"
             :message="playbackMessage"
             :engine-name="selectedEngineName"
             :playing="playing"
@@ -571,9 +746,20 @@ function showWindowActionError(error: unknown) {
             :loading="loading"
             :active-media-id="library.selectedMedia?.id || ''"
             @select="handleSelect"
-            @open-location="openMediaLocation"
+            @context-menu="showFileContextMenu"
           />
         </aside>
+      </div>
+
+      <div
+        v-if="contextMenu.visible"
+        class="context-menu"
+        :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+        @click.stop
+      >
+        <button type="button" @click="openContextMenuLocation">
+          打开文件所在位置
+        </button>
       </div>
     </section>
   </main>
@@ -724,6 +910,37 @@ function showWindowActionError(error: unknown) {
   border-color: rgba(148, 163, 184, 0.16);
   background: rgba(255, 255, 255, 0.04);
   color: var(--ocp-text-inverse-muted);
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 154px;
+  padding: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 7px;
+  background: rgba(15, 23, 34, 0.96);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+}
+
+.context-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #d8e5f7;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.context-menu button:hover {
+  background: rgba(59, 130, 246, 0.16);
+  color: #ffffff;
 }
 
 @media (min-width: 1500px) {

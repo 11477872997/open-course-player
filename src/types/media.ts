@@ -18,6 +18,9 @@ export interface SelectedMedia {
   path: string;
   kind: MediaKind;
   engine: PlayerEngine | "unsupported";
+  duration?: number | null;
+  size?: number | null;
+  mime?: string | null;
 }
 
 export interface MediaLibraryRoot {

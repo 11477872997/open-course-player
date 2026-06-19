@@ -19,6 +19,8 @@ import type { SelectedMedia } from "../../../types/media";
 const props = defineProps<{
   media: SelectedMedia | null;
   sourceUrl: string;
+  subtitleUrl: string;
+  subtitleLabel: string;
   message: string;
   engineName: string;
   playing: boolean;
@@ -50,7 +52,7 @@ const emit = defineEmits<{
   openLocation: [];
 }>();
 
-const playbackRates = [0.75, 1, 1.25, 1.5, 2];
+const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2];
 let shellElement: HTMLElement | null = null;
 
 function setMediaRef(element: Element | ComponentPublicInstance | null) {
@@ -119,7 +121,16 @@ function requestFullscreen() {
           @play="emit('play')"
           @pause="emit('pause')"
           @ended="emit('ended')"
-        />
+        >
+          <track
+            v-if="subtitleUrl"
+            kind="subtitles"
+            :src="subtitleUrl"
+            srclang="zh"
+            :label="subtitleLabel || '字幕'"
+            default
+          />
+        </video>
 
         <div v-else-if="media?.kind === 'audio' && sourceUrl" class="audio-stage">
           <audio
@@ -239,6 +250,7 @@ function requestFullscreen() {
           <span>{{ engineName }}</span>
           <span>{{ sourceUrl ? "本地文件" : "未加载" }}</span>
           <span>{{ formatDuration(duration) }}</span>
+          <span>{{ subtitleUrl ? subtitleLabel || "字幕已加载" : "无字幕" }}</span>
           <button
             v-if="media"
             class="meta-action"

@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 release-browser-runtime
+test-media
 dist
 dist-ssr
 *.local

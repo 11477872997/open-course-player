@@ -19,6 +19,7 @@ const emit = defineEmits<{
   refresh: [root: MediaLibraryRoot];
   select: [root: MediaLibraryRoot];
   remove: [root: MediaLibraryRoot];
+  contextMenu: [root: MediaLibraryRoot, event: MouseEvent];
 }>();
 
 function refreshActiveRoot() {
@@ -44,6 +45,7 @@ function refreshActiveRoot() {
         :class="{ selected: root.id === activeRootId }"
         type="button"
         @click="emit('select', root)"
+        @contextmenu.prevent.stop="emit('contextMenu', root, $event)"
       >
         <el-icon><Collection /></el-icon>
         <span :title="root.path">{{ root.name }}</span>

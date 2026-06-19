@@ -57,6 +57,7 @@ src/api/
   mediaLibrary.ts
   mediaServer.ts
   mpv.ts
+  playbackHistory.ts
   playbackProgress.ts
 
 src/store/modules/
@@ -73,6 +74,7 @@ src-tauri/src/
   media_library.rs
   media_server.rs
   media_types.rs
+  playback_history.rs
   playback_progress.rs
   mpv.rs
   settings.rs
@@ -84,6 +86,7 @@ src-tauri/src/
 | `media_library.rs` | 扫描用户选中的目录，返回安全目录树 |
 | `media_server.rs` | 通过 `127.0.0.1` 服务授权文件，并支持分段请求 |
 | `media_types.rs` | 扩展名、MIME 和播放类型分类 |
+| `playback_history.rs` | 保存资料库路径、当前资料库和最后选择的媒体文件 |
 | `playback_progress.rs` | 保存和读取每个文件的播放进度 |
 | `mpv.rs` | 启动、停止和控制 mpv 随包程序 |
 | `settings.rs` | 应用设置和最近目录 |

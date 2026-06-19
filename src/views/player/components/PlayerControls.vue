@@ -28,6 +28,7 @@ const emit = defineEmits<{
 }>();
 
 const playbackRates = [0.75, 1, 1.25, 1.5, 2];
+const playbackRateOptions = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 const hasDuration = computed(() => Number.isFinite(props.duration) && props.duration > 0);
 const progressPercent = computed(() => {
@@ -56,6 +57,10 @@ function togglePlaybackRate() {
   const currentIndex = playbackRates.findIndex((rate) => rate === props.playbackRate);
   const nextIndex = currentIndex < 0 ? 1 : (currentIndex + 1) % playbackRates.length;
   emit("rate", playbackRates[nextIndex]);
+}
+
+function formatRate(rate: number) {
+  return `${rate.toFixed(rate % 1 === 0 ? 1 : 2)}x`;
 }
 </script>
 
@@ -145,6 +150,21 @@ function togglePlaybackRate() {
       >
         {{ playbackRate.toFixed(playbackRate % 1 === 0 ? 1 : 2) }}x
       </button>
+      <el-select
+        class="speed-select"
+        :model-value="playbackRate"
+        :disabled="disabled"
+        placement="top"
+        size="small"
+        @change="emit('rate', Number($event))"
+      >
+        <el-option
+          v-for="rate in playbackRateOptions"
+          :key="rate"
+          :label="formatRate(rate)"
+          :value="rate"
+        />
+      </el-select>
     </div>
   </footer>
 </template>
@@ -315,9 +335,27 @@ function togglePlaybackRate() {
 }
 
 .speed-button {
+  display: none;
   min-width: 58px;
   height: 28px;
   border-radius: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.speed-select {
+  width: 76px;
+}
+
+.speed-select :deep(.el-select__wrapper) {
+  min-height: 28px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.18) inset;
+}
+
+.speed-select :deep(.el-select__selected-item) {
+  color: #d8e5f7;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
@@ -334,6 +372,10 @@ function togglePlaybackRate() {
 
   .speed-button {
     min-width: 50px;
+  }
+
+  .speed-select {
+    width: 68px;
   }
 }
 </style>
