@@ -2,9 +2,9 @@ import type { MediaKind, PlayerEngine } from "../types/media";
 
 const mpegTsExtensions = new Set([".ts", ".m2ts", ".mts"]);
 const hlsExtensions = new Set([".m3u8"]);
-const webVideoExtensions = new Set([".mp4", ".m4v", ".webm"]);
-const webAudioExtensions = new Set([".mp3", ".wav", ".ogg", ".flac"]);
-const mpvExtensions = new Set([".mkv", ".avi", ".flv", ".mov", ".wmv", ".rmvb", ".vob"]);
+const webVideoExtensions = new Set([".mp4", ".m4v", ".webm", ".ogv"]);
+const webAudioExtensions = new Set([".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".opus", ".wma"]);
+const mpvExtensions = new Set([".mkv", ".avi", ".flv", ".mov", ".wmv", ".rmvb", ".vob", ".3gp", ".mpeg", ".mpg"]);
 const subtitleExtensions = new Set([".srt", ".ass", ".vtt"]);
 
 export function getExtension(fileName: string) {

@@ -11,9 +11,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [node: MediaTreeNode];
+  openLocation: [node: MediaTreeNode];
 }>();
 
 const hasNodes = computed(() => props.nodes.length > 0);
+
+function handleContextMenu(node: MediaTreeNode) {
+  emit("openLocation", node);
+}
 </script>
 
 <template>
@@ -39,6 +44,7 @@ const hasNodes = computed(() => props.nodes.length > 0);
             folder: data.kind === 'folder',
             disabled: !data.playable && data.kind !== 'folder'
           }"
+          @contextmenu.prevent.stop="handleContextMenu(data)"
         >
           <template v-if="data.kind === 'folder'">
             <el-icon class="folder-arrow"><ArrowRight /></el-icon>

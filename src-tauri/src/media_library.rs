@@ -75,7 +75,7 @@ fn scan_children(root: &Path, dir: &Path, depth: usize) -> Result<Vec<MediaTreeN
             nodes.push(MediaTreeNode {
                 id: stable_id(&safe_path),
                 name,
-                path: safe_path.to_string_lossy().to_string(),
+                path: display_path(&safe_path),
                 kind: "folder".to_string(),
                 playable: false,
                 engine: "unsupported".to_string(),
@@ -96,7 +96,7 @@ fn scan_children(root: &Path, dir: &Path, depth: usize) -> Result<Vec<MediaTreeN
         nodes.push(MediaTreeNode {
             id: stable_id(&safe_path),
             name,
-            path: safe_path.to_string_lossy().to_string(),
+            path: display_path(&safe_path),
             kind: classification.kind.to_string(),
             playable: classification.playable,
             engine: classification.engine.to_string(),
@@ -131,17 +131,17 @@ fn classify_file(name: &str) -> Classification {
             playable: true,
             engine: "easy-player",
         },
-        ".mp4" | ".m4v" | ".webm" => Classification {
+        ".mp4" | ".m4v" | ".webm" | ".ogv" => Classification {
             kind: "video",
             playable: true,
             engine: "web-video",
         },
-        ".mp3" | ".wav" | ".ogg" | ".flac" => Classification {
+        ".mp3" | ".wav" | ".ogg" | ".flac" | ".m4a" | ".aac" | ".opus" | ".wma" => Classification {
             kind: "audio",
             playable: true,
             engine: "web-video",
         },
-        ".mkv" | ".avi" | ".flv" | ".mov" | ".wmv" | ".rmvb" | ".vob" => Classification {
+        ".mkv" | ".avi" | ".flv" | ".mov" | ".wmv" | ".rmvb" | ".vob" | ".3gp" | ".mpeg" | ".mpg" => Classification {
             kind: "video",
             playable: true,
             engine: "mpv",
@@ -167,4 +167,12 @@ fn stable_id(path: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     path.to_string_lossy().hash(&mut hasher);
     format!("{:x}", hasher.finish())
+}
+
+fn display_path(path: &Path) -> String {
+    let value = path.to_string_lossy().to_string();
+    value
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&value)
+        .to_string()
 }

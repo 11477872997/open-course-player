@@ -1,3 +1,4 @@
+mod file_location;
 mod media_library;
 mod mpv;
 
@@ -6,6 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
+            file_location::reveal_path,
             media_library::scan_media_root,
             mpv::mpv_play
         ])

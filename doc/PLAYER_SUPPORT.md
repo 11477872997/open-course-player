@@ -21,10 +21,10 @@ mpv：主流本地文件格式兼容兜底
 | `.m3u8` | P1 | EasyPlayer.js 或 hls.js | mpv | HLS 播放列表，常引用 `.ts` 分片 |
 | HTTP-FLV, fMP4, WebRTC, H.265 流 | P1 | EasyPlayer.js | mpv 或外部方案 | EasyPlayer.js 的强项，许可证确认后接入 |
 | `.mp4`, `.m4v` | P1 | HTML5 视频 | mpv | H.264/AAC 兼容性最好 |
-| `.webm` | P2 | HTML5 视频 | mpv | 取决于桌面网页视图的编码支持 |
-| `.mp3`, `.wav`, `.ogg`, `.flac` | P2 | HTML5 音频 | mpv | 已接入音频播放面板，具体编码取决于 WebView |
+| `.webm`, `.ogv` | P2 | HTML5 视频 | mpv | 取决于桌面网页视图的编码支持 |
+| `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.aac`, `.opus`, `.wma` | P2 | HTML5 音频 | mpv | 已接入音频播放面板，具体编码取决于 WebView |
 | `.mkv` | P1 | mpv | 外部打开 | 内置播放器不可靠 |
-| `.avi`, `.flv`, `.mov`, `.wmv` | P2 | mpv | 外部打开 | 兼容路径 |
+| `.avi`, `.flv`, `.mov`, `.wmv`, `.3gp`, `.mpeg`, `.mpg` | P2 | mpv | 外部打开 | 兼容路径 |
 | `.rmvb`, `.vob` | P3 | mpv | 外部打开 | 尽力支持 |
 | `.srt`, `.ass`, `.vtt` | P1 | mpv | 字幕能力范围内支持 | 按同名文件自动匹配 |
 

@@ -11,6 +11,7 @@ import LibraryList from "./components/LibraryList.vue";
 import FileTree from "./components/FileTree.vue";
 import PlaybackSurface from "./components/PlaybackSurface.vue";
 import PlayerControls from "./components/PlayerControls.vue";
+import { revealPathInFileManager } from "../../api/fileLocation";
 import { scanMediaRoot } from "../../api/mediaLibrary";
 import { playWithMpv } from "../../api/mpv";
 import { describeEngine } from "../../player/mediaTypes";
@@ -134,6 +135,21 @@ function handleSelect(node: MediaTreeNode) {
   playbackMessage.value = decision.reason;
 }
 
+async function openMediaLocation(target?: MediaTreeNode | SelectedMedia | null) {
+  const path = target?.path || library.selectedMedia?.path;
+  if (!path) {
+    ElMessage.info("请先选择一个文件");
+    return;
+  }
+
+  try {
+    await revealPathInFileManager(normalizeLocalPath(path));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ElMessage.warning(message);
+  }
+}
+
 async function loadSelectedMedia(media: SelectedMedia | null) {
   destroyPlaybackAdapters();
   stopPlaybackSync();
@@ -149,7 +165,7 @@ async function loadSelectedMedia(media: SelectedMedia | null) {
 
   if (media.engine === "mpv") {
     try {
-      await playWithMpv(media.path);
+      await playWithMpv(normalizeLocalPath(media.path));
       playbackMessage.value = "已调用 mpv 兜底播放";
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -164,7 +180,8 @@ async function loadSelectedMedia(media: SelectedMedia | null) {
     return;
   }
 
-  const sourceUrl = isTauri() ? convertFileSrc(media.path) : media.path;
+  const sourcePath = normalizeLocalPath(media.path);
+  const sourceUrl = isTauri() ? convertFileSrc(sourcePath) : sourcePath;
   mediaSourceUrl.value = sourceUrl;
   playbackMessage.value = "媒体已加载";
   await nextTick();
@@ -175,12 +192,13 @@ function attachPlaybackAdapter(media: SelectedMedia, sourceUrl: string) {
   const video = mediaElement.value;
   if (!video) return;
 
-  video.removeAttribute("src");
-  video.load();
   video.volume = volume.value;
   video.playbackRate = playbackRate.value;
 
   if (media.engine === "mpegts") {
+    video.removeAttribute("src");
+    video.load();
+
     if (!mpegts.isSupported() || !mpegts.getFeatureList().msePlayback) {
       playbackMessage.value = "当前环境不支持 MPEG-TS 内置播放";
       return;
@@ -211,6 +229,9 @@ function attachPlaybackAdapter(media: SelectedMedia, sourceUrl: string) {
   }
 
   if (media.engine === "easy-player" && Hls.isSupported()) {
+    video.removeAttribute("src");
+    video.load();
+
     hlsPlayer = new Hls();
     hlsPlayer.loadSource(sourceUrl);
     hlsPlayer.attachMedia(video);
@@ -290,6 +311,25 @@ function setPlayingState(value: boolean) {
   playing.value = value;
 }
 
+async function handleMediaError() {
+  const media = library.selectedMedia;
+  const element = mediaElement.value;
+  if (!media) return;
+
+  const reason = mediaErrorReason(element?.error?.code);
+  playbackMessage.value = `内置播放失败：${reason}`;
+  ElMessage.warning(playbackMessage.value);
+
+  if (media.engine !== "mpv") {
+    try {
+      await playWithMpv(normalizeLocalPath(media.path));
+      playbackMessage.value = "已切换到 mpv 兜底播放";
+    } catch {
+      // mpv 是可选兜底；没有安装时保留内置播放器的错误提示。
+    }
+  }
+}
+
 function startPlaybackSync() {
   stopPlaybackSync();
   playbackSyncTimer = window.setInterval(syncTime, 300);
@@ -345,6 +385,25 @@ function normalizeDuration(primary: number | undefined, fallback = 0) {
   }
 
   return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
+}
+
+function normalizeLocalPath(path: string) {
+  return path.replace(/^\\\\\?\\/, "");
+}
+
+function mediaErrorReason(code?: number) {
+  switch (code) {
+    case MediaError.MEDIA_ERR_ABORTED:
+      return "播放被中断";
+    case MediaError.MEDIA_ERR_NETWORK:
+      return "媒体读取失败";
+    case MediaError.MEDIA_ERR_DECODE:
+      return "当前编码无法解码";
+    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+      return "当前格式或路径不被内置播放器支持";
+    default:
+      return "未知媒体错误";
+  }
 }
 
 function filterTree(nodes: MediaTreeNode[], keyword: string): MediaTreeNode[] {
@@ -470,6 +529,7 @@ function showWindowActionError(error: unknown) {
             @media-mounted="setMediaElement"
             @loaded-metadata="syncMetadata"
             @duration-change="syncMetadata"
+            @media-error="handleMediaError"
             @time-update="syncTime"
             @seek="seekTo"
             @volume="setVolume"
@@ -477,6 +537,7 @@ function showWindowActionError(error: unknown) {
             @play="setPlayingState(true)"
             @pause="setPlayingState(false)"
             @ended="playNext"
+            @open-location="openMediaLocation()"
           />
           <PlayerControls
             :disabled="!library.selectedMedia || !mediaSourceUrl"
@@ -510,6 +571,7 @@ function showWindowActionError(error: unknown) {
             :loading="loading"
             :active-media-id="library.selectedMedia?.id || ''"
             @select="handleSelect"
+            @open-location="openMediaLocation"
           />
         </aside>
       </div>

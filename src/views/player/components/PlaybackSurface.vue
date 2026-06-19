@@ -6,6 +6,7 @@ import {
   DArrowLeft,
   DArrowRight,
   FolderAdd,
+  FolderOpened,
   FullScreen,
   Headset,
   Monitor,
@@ -39,12 +40,14 @@ const emit = defineEmits<{
   loadedMetadata: [];
   timeUpdate: [];
   durationChange: [];
+  mediaError: [];
   seek: [value: number];
   volume: [value: number];
   rate: [value: number];
   play: [];
   pause: [];
   ended: [];
+  openLocation: [];
 }>();
 
 const playbackRates = [0.75, 1, 1.25, 1.5, 2];
@@ -109,7 +112,9 @@ function requestFullscreen() {
           :src="media.engine === 'mpegts' || media.engine === 'easy-player' ? undefined : sourceUrl"
           playsinline
           @loadedmetadata="emit('loadedMetadata')"
+          @canplay="emit('loadedMetadata')"
           @durationchange="emit('durationChange')"
+          @error="emit('mediaError')"
           @timeupdate="emit('timeUpdate')"
           @play="emit('play')"
           @pause="emit('pause')"
@@ -122,7 +127,9 @@ function requestFullscreen() {
             :src="sourceUrl"
             preload="metadata"
             @loadedmetadata="emit('loadedMetadata')"
+            @canplay="emit('loadedMetadata')"
             @durationchange="emit('durationChange')"
+            @error="emit('mediaError')"
             @timeupdate="emit('timeUpdate')"
             @play="emit('play')"
             @pause="emit('pause')"
@@ -232,6 +239,15 @@ function requestFullscreen() {
           <span>{{ engineName }}</span>
           <span>{{ sourceUrl ? "本地文件" : "未加载" }}</span>
           <span>{{ formatDuration(duration) }}</span>
+          <button
+            v-if="media"
+            class="meta-action"
+            type="button"
+            @click="emit('openLocation')"
+          >
+            <el-icon><FolderOpened /></el-icon>
+            打开文件所在位置
+          </button>
           <span><el-icon><Calendar /></el-icon> {{ media ? "已选择" : "等待中" }}</span>
         </div>
       </section>
@@ -619,6 +635,30 @@ function requestFullscreen() {
   background: rgba(255, 255, 255, 0.045);
   color: #a6b6ca;
   font-size: 11px;
+}
+
+.meta-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 5px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #cfe1ff;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.meta-action:hover {
+  border-color: rgba(59, 130, 246, 0.44);
+  background: rgba(59, 130, 246, 0.2);
+  color: #ffffff;
 }
 
 @media (max-width: 760px) {
