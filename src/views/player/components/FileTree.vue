@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ArrowRight, CircleCheck, VideoPlay } from "@element-plus/icons-vue";
+import { ArrowRight, VideoPlay } from "@element-plus/icons-vue";
 import type { MediaTreeNode } from "../../../types/media";
 
 const props = defineProps<{
@@ -14,12 +14,6 @@ const emit = defineEmits<{
 }>();
 
 const hasNodes = computed(() => props.nodes.length > 0);
-
-function timeFor(index: number) {
-  const minutes = 12 + (index % 7);
-  const seconds = String((index * 5) % 60).padStart(2, "0");
-  return `${minutes}:${seconds}`;
-}
 </script>
 
 <template>
@@ -56,9 +50,7 @@ function timeFor(index: number) {
             <span class="timeline-dot">
               <el-icon v-if="data.id === activeMediaId"><VideoPlay /></el-icon>
             </span>
-            <span class="chapter-name" :title="data.name">{{ node.level > 1 ? "" : "03-" }}{{ data.name }}</span>
-            <time>{{ timeFor(node.level + data.name.length) }}</time>
-            <el-icon class="done"><CircleCheck /></el-icon>
+            <span class="chapter-name" :title="data.name">{{ data.name }}</span>
           </template>
         </div>
       </template>
@@ -93,7 +85,7 @@ function timeFor(index: number) {
   display: grid;
   width: 100%;
   min-width: 0;
-  grid-template-columns: 18px minmax(0, 1fr) auto 18px;
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   min-height: 28px;
@@ -133,8 +125,7 @@ function timeFor(index: number) {
   white-space: nowrap;
 }
 
-.chapter-row em,
-.chapter-row time {
+.chapter-row em {
   color: #8296ad;
   font-size: 11px;
   font-style: normal;
@@ -169,11 +160,4 @@ function timeFor(index: number) {
   display: none;
 }
 
-.done {
-  color: #61758d;
-}
-
-.chapter-row.active .done {
-  color: var(--ocp-primary);
-}
 </style>

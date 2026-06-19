@@ -1,24 +1,31 @@
 <script setup lang="ts">
 import type { ComponentPublicInstance } from "vue";
 import {
-  ArrowLeft,
-  ArrowRight,
   Calendar,
+  Close,
+  DArrowLeft,
+  DArrowRight,
   FolderAdd,
   FullScreen,
+  Headset,
   Monitor,
+  Timer,
   VideoPause,
   VideoPlay
 } from "@element-plus/icons-vue";
 import type { SelectedMedia } from "../../../types/media";
 
-defineProps<{
+const props = defineProps<{
   media: SelectedMedia | null;
   sourceUrl: string;
   message: string;
   engineName: string;
   playing: boolean;
+  currentTime: number;
   duration: number;
+  volume: number;
+  playbackRate: number;
+  fullscreen: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -26,44 +33,107 @@ const emit = defineEmits<{
   previous: [];
   next: [];
   playPause: [];
-  fullscreen: [];
-  videoMounted: [element: HTMLVideoElement | null];
+  fullscreen: [element: HTMLElement];
+  exitFullscreen: [];
+  mediaMounted: [element: HTMLMediaElement | null];
   loadedMetadata: [];
   timeUpdate: [];
+  durationChange: [];
+  seek: [value: number];
+  volume: [value: number];
+  rate: [value: number];
   play: [];
   pause: [];
   ended: [];
 }>();
 
-function setVideoRef(element: Element | ComponentPublicInstance | null) {
-  emit("videoMounted", element instanceof HTMLVideoElement ? element : null);
+const playbackRates = [0.75, 1, 1.25, 1.5, 2];
+let shellElement: HTMLElement | null = null;
+
+function setMediaRef(element: Element | ComponentPublicInstance | null) {
+  emit("mediaMounted", element instanceof HTMLMediaElement ? element : null);
 }
 
-function formatDuration(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "--:--";
+function setShellRef(element: Element | ComponentPublicInstance | null) {
+  shellElement = element instanceof HTMLElement ? element : null;
+}
+
+function formatTime(seconds: number, fallback = "00:00") {
+  if (!Number.isFinite(seconds) || seconds < 0) return fallback;
   const total = Math.floor(seconds);
   const minutes = Math.floor(total / 60);
   const rest = total % 60;
   return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
+
+function formatDuration(seconds: number) {
+  return Number.isFinite(seconds) && seconds > 0 ? formatTime(seconds, "--:--") : "--:--";
+}
+
+function seekPercent() {
+  if (!Number.isFinite(props.duration) || props.duration <= 0) return 0;
+  return Math.min(100, Math.max(0, (props.currentTime / props.duration) * 100));
+}
+
+function volumePercent() {
+  return Math.min(100, Math.max(0, props.volume * 100));
+}
+
+function handleSeek(event: Event) {
+  emit("seek", Number((event.target as HTMLInputElement).value));
+}
+
+function handleVolume(event: Event) {
+  emit("volume", Number((event.target as HTMLInputElement).value));
+}
+
+function togglePlaybackRate() {
+  const currentIndex = playbackRates.findIndex((rate) => rate === props.playbackRate);
+  const nextIndex = currentIndex < 0 ? 1 : (currentIndex + 1) % playbackRates.length;
+  emit("rate", playbackRates[nextIndex]);
+}
+
+function requestFullscreen() {
+  if (shellElement) emit("fullscreen", shellElement);
+}
 </script>
 
 <template>
   <div class="playback-surface">
-    <div class="video-card">
-      <div class="player-stage" @dblclick="emit('fullscreen')">
+    <div :ref="setShellRef" class="video-card" :class="{ fullscreen }">
+      <div class="player-stage">
         <video
-          v-if="media && sourceUrl"
-          :ref="setVideoRef"
+          v-if="media?.kind === 'video' && sourceUrl"
+          :ref="setMediaRef"
           class="video-element"
-          :src="sourceUrl"
+          :src="media.engine === 'mpegts' || media.engine === 'easy-player' ? undefined : sourceUrl"
           playsinline
           @loadedmetadata="emit('loadedMetadata')"
+          @durationchange="emit('durationChange')"
           @timeupdate="emit('timeUpdate')"
           @play="emit('play')"
           @pause="emit('pause')"
           @ended="emit('ended')"
         />
+
+        <div v-else-if="media?.kind === 'audio' && sourceUrl" class="audio-stage">
+          <audio
+            :ref="setMediaRef"
+            :src="sourceUrl"
+            preload="metadata"
+            @loadedmetadata="emit('loadedMetadata')"
+            @durationchange="emit('durationChange')"
+            @timeupdate="emit('timeUpdate')"
+            @play="emit('play')"
+            @pause="emit('pause')"
+            @ended="emit('ended')"
+          />
+          <div class="audio-disc">
+            <el-icon :size="54"><Headset /></el-icon>
+          </div>
+          <strong :title="media.name">{{ media.name }}</strong>
+          <span>{{ playing ? "音频正在播放" : "音频已就绪" }}</span>
+        </div>
 
         <button v-if="media && sourceUrl" class="center-play" type="button" @click="emit('playPause')">
           <el-icon :size="44">
@@ -84,10 +154,69 @@ function formatDuration(seconds: number) {
         </div>
 
         <div class="stage-top">
-          <span>{{ media ? "正在播放" : "等待选择" }}</span>
-          <div class="stage-tools">
-            <button type="button" @click="emit('fullscreen')">
-              <el-icon><FullScreen /></el-icon>
+          <span>{{ media ? (playing ? "正在播放" : "已就绪") : "等待选择" }}</span>
+          <button
+            v-if="media?.kind === 'video' && sourceUrl"
+            class="stage-tool"
+            type="button"
+            :title="fullscreen ? '退出全屏' : '视频全屏'"
+            @click="fullscreen ? emit('exitFullscreen') : requestFullscreen()"
+          >
+            <el-icon><Close v-if="fullscreen" /><FullScreen v-else /></el-icon>
+          </button>
+        </div>
+
+        <div v-if="fullscreen && media && sourceUrl" class="fullscreen-controls">
+          <div class="fullscreen-title">
+            <strong :title="media.name">{{ media.name }}</strong>
+            <span>{{ formatTime(currentTime) }} / {{ formatDuration(duration) }}</span>
+          </div>
+
+          <label class="fs-progress" :style="{ '--fill': `${seekPercent()}%` }">
+            <input
+              type="range"
+              min="0"
+              :max="duration > 0 ? duration : 0"
+              step="0.1"
+              :value="currentTime"
+              :disabled="duration <= 0"
+              @input="handleSeek"
+            />
+          </label>
+
+          <div class="fs-actions">
+            <button type="button" title="上一个文件" @click="emit('previous')">
+              <el-icon><DArrowLeft /></el-icon>
+            </button>
+            <button class="primary" type="button" :title="playing ? '暂停' : '播放'" @click="emit('playPause')">
+              <el-icon><VideoPause v-if="playing" /><VideoPlay v-else /></el-icon>
+            </button>
+            <button type="button" title="下一个文件" @click="emit('next')">
+              <el-icon><DArrowRight /></el-icon>
+            </button>
+
+            <span class="fs-time">
+              <el-icon><Timer /></el-icon>
+              {{ formatTime(currentTime) }} / {{ formatDuration(duration) }}
+            </span>
+
+            <label class="fs-volume" :style="{ '--fill': `${volumePercent()}%` }">
+              <el-icon><Headset /></el-icon>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                :value="volume"
+                @input="handleVolume"
+              />
+            </label>
+
+            <button class="speed" type="button" title="切换倍速" @click="togglePlaybackRate">
+              {{ playbackRate.toFixed(playbackRate % 1 === 0 ? 1 : 2) }}x
+            </button>
+            <button type="button" title="退出全屏" @click="emit('exitFullscreen')">
+              <el-icon><Close /></el-icon>
             </button>
           </div>
         </div>
@@ -97,11 +226,6 @@ function formatDuration(seconds: number) {
         <div class="file-copy">
           <strong :title="media?.name">{{ media?.name || "未选择文件" }}</strong>
           <span :title="media?.path">{{ media?.path || "从右侧章节列表选择一个可播放文件" }}</span>
-        </div>
-
-        <div class="file-actions">
-          <el-button :icon="ArrowLeft" :disabled="!media" @click="emit('previous')">上一文件</el-button>
-          <el-button type="primary" :icon="ArrowRight" :disabled="!media" @click="emit('next')">下一文件</el-button>
         </div>
 
         <div class="meta-row">
@@ -132,6 +256,19 @@ function formatDuration(seconds: number) {
   background: rgba(16, 23, 34, 0.72);
 }
 
+.video-card.fullscreen {
+  width: 100vw;
+  height: 100vh;
+  grid-template-rows: minmax(0, 1fr);
+  border: 0;
+  border-radius: 0;
+  background: #03060b;
+}
+
+.video-card.fullscreen .media-info {
+  display: none;
+}
+
 .player-stage {
   position: relative;
   display: grid;
@@ -151,6 +288,50 @@ function formatDuration(seconds: number) {
   object-fit: contain;
 }
 
+.audio-stage {
+  display: grid;
+  max-width: min(520px, 72%);
+  justify-items: center;
+  gap: 12px;
+  color: #d8e5f7;
+  text-align: center;
+}
+
+.audio-stage audio {
+  display: none;
+}
+
+.audio-stage strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: #f8fafc;
+  font-size: 18px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audio-stage span {
+  color: #93a6bd;
+  font-size: 12px;
+}
+
+.audio-disc {
+  display: grid;
+  width: 118px;
+  height: 118px;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.28) 0 18%, transparent 19%),
+    linear-gradient(145deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.62));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 42px rgba(0, 0, 0, 0.34);
+  color: #cfe1ff;
+}
+
 .center-play {
   position: absolute;
   display: grid;
@@ -168,6 +349,11 @@ function formatDuration(seconds: number) {
 
 .player-stage:hover .center-play {
   opacity: 1;
+}
+
+.video-card.fullscreen .center-play {
+  width: 84px;
+  height: 84px;
 }
 
 .empty-stage {
@@ -208,6 +394,7 @@ function formatDuration(seconds: number) {
   top: 14px;
   right: 14px;
   left: 14px;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -222,19 +409,163 @@ function formatDuration(seconds: number) {
   font-size: 12px;
 }
 
-.stage-tools {
+.stage-tool,
+.fs-actions button {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.58);
+  color: #d8e5f7;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.stage-tool {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
   pointer-events: auto;
 }
 
-.stage-tools button {
+.stage-tool:hover,
+.fs-actions button:hover {
+  border-color: rgba(148, 163, 184, 0.32);
+  background: rgba(30, 41, 59, 0.72);
+  color: #ffffff;
+}
+
+.fullscreen-controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 4;
   display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border-radius: 6px;
-  background: rgba(15, 23, 42, 0.48);
-  color: #d8e5f7;
+  gap: 10px;
+  padding: 56px 24px 22px;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+}
+
+.fullscreen-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: #f8fafc;
+}
+
+.fullscreen-title strong {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fullscreen-title span,
+.fs-time {
+  color: #d6e3f2;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fs-progress,
+.fs-volume {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.fs-progress::before,
+.fs-volume::before {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 4px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, var(--ocp-primary) var(--fill), transparent var(--fill)),
+    rgba(148, 163, 184, 0.28);
+  content: "";
+}
+
+.fs-progress input,
+.fs-volume input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
   cursor: pointer;
+}
+
+.fs-progress input::-webkit-slider-runnable-track,
+.fs-volume input::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+
+.fs-progress input::-webkit-slider-thumb,
+.fs-volume input::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  appearance: none;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--ocp-primary);
+}
+
+.fs-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fs-actions button {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+}
+
+.fs-actions button.primary {
+  border-color: rgba(59, 130, 246, 0.76);
+  background: var(--ocp-primary);
+  color: #ffffff;
+}
+
+.fs-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+}
+
+.fs-volume {
+  width: 120px;
+  gap: 8px;
+  margin-left: auto;
+  color: #d8e5f7;
+}
+
+.fs-volume::before {
+  left: 24px;
+}
+
+.fs-volume input {
+  flex: 1;
+}
+
+.fs-actions button.speed {
+  width: 58px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .media-info {
@@ -270,17 +601,6 @@ function formatDuration(seconds: number) {
   white-space: nowrap;
 }
 
-.file-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.file-actions :deep(.el-button) {
-  min-height: 30px;
-  padding: 0 10px;
-}
-
 .meta-row {
   display: flex;
   min-width: 0;
@@ -299,5 +619,19 @@ function formatDuration(seconds: number) {
   background: rgba(255, 255, 255, 0.045);
   color: #a6b6ca;
   font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .fullscreen-controls {
+    padding: 52px 14px 16px;
+  }
+
+  .fs-actions {
+    gap: 7px;
+  }
+
+  .fs-volume {
+    width: 84px;
+  }
 }
 </style>

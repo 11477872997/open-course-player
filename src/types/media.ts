@@ -16,6 +16,7 @@ export interface SelectedMedia {
   id: string;
   name: string;
   path: string;
+  kind: MediaKind;
   engine: PlayerEngine | "unsupported";
 }
 

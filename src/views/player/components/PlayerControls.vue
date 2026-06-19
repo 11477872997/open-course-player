@@ -1,15 +1,15 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import {
   DArrowLeft,
   DArrowRight,
-  FullScreen,
   Headset,
   Timer,
   VideoPause,
   VideoPlay
 } from "@element-plus/icons-vue";
 
-defineProps<{
+const props = defineProps<{
   disabled: boolean;
   playing: boolean;
   currentTime: number;
@@ -25,79 +25,126 @@ const emit = defineEmits<{
   seek: [value: number];
   volume: [value: number];
   rate: [value: number];
-  fullscreen: [];
 }>();
 
-function formatTime(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "00:00";
+const playbackRates = [0.75, 1, 1.25, 1.5, 2];
+
+const hasDuration = computed(() => Number.isFinite(props.duration) && props.duration > 0);
+const progressPercent = computed(() => {
+  if (!hasDuration.value) return 0;
+  return Math.min(100, Math.max(0, (props.currentTime / props.duration) * 100));
+});
+const volumePercent = computed(() => Math.min(100, Math.max(0, props.volume * 100)));
+
+function formatTime(seconds: number, fallback = "00:00") {
+  if (!Number.isFinite(seconds) || seconds < 0) return fallback;
   const total = Math.floor(seconds);
   const minutes = Math.floor(total / 60);
   const rest = total % 60;
   return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
+
+function handleSeek(event: Event) {
+  emit("seek", Number((event.target as HTMLInputElement).value));
+}
+
+function handleVolume(event: Event) {
+  emit("volume", Number((event.target as HTMLInputElement).value));
+}
+
+function togglePlaybackRate() {
+  const currentIndex = playbackRates.findIndex((rate) => rate === props.playbackRate);
+  const nextIndex = currentIndex < 0 ? 1 : (currentIndex + 1) % playbackRates.length;
+  emit("rate", playbackRates[nextIndex]);
+}
 </script>
 
 <template>
-  <footer class="player-controls">
-    <div class="time-readout">
+  <footer class="player-controls" :class="{ 'is-disabled': disabled }">
+    <div class="time-readout" aria-label="播放时间">
       <el-icon><Timer /></el-icon>
-      <span>{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</span>
+      <span>{{ formatTime(currentTime) }}</span>
+      <i>/</i>
+      <span>{{ hasDuration ? formatTime(duration) : "--:--" }}</span>
     </div>
 
-    <div class="transport">
-      <el-tooltip content="上一个文件" placement="top">
-        <el-button circle :icon="DArrowLeft" :disabled="disabled" @click="emit('previous')" />
-      </el-tooltip>
-      <el-tooltip :content="playing ? '暂停' : '播放'" placement="top">
-        <el-button
-          circle
-          type="primary"
-          :icon="playing ? VideoPause : VideoPlay"
-          :disabled="disabled"
-          @click="emit('playPause')"
-        />
-      </el-tooltip>
-      <el-tooltip content="下一个文件" placement="top">
-        <el-button circle :icon="DArrowRight" :disabled="disabled" @click="emit('next')" />
-      </el-tooltip>
-    </div>
-
-    <el-slider
-      class="progress"
-      :model-value="currentTime"
-      :max="duration || 0"
-      :disabled="disabled || !duration"
-      :show-tooltip="false"
-      @input="(value: number | number[]) => emit('seek', Number(value))"
-    />
-
-    <div class="side-controls">
-      <el-icon :size="16"><Headset /></el-icon>
-      <el-slider
-        class="volume"
-        :model-value="volume"
-        :max="1"
-        :step="0.01"
+    <div class="transport" aria-label="播放控制">
+      <button
+        class="control-button"
+        type="button"
+        title="上一个文件"
         :disabled="disabled"
-        :show-tooltip="false"
-        @input="(value: number | number[]) => emit('volume', Number(value))"
-      />
-      <el-select
-        :model-value="String(playbackRate)"
-        class="speed"
-        :disabled="disabled"
-        size="small"
-        @change="(value: string) => emit('rate', Number(value))"
+        @click="emit('previous')"
       >
-        <el-option label="0.75x" value="0.75" />
-        <el-option label="1.0x" value="1" />
-        <el-option label="1.25x" value="1.25" />
-        <el-option label="1.5x" value="1.5" />
-        <el-option label="2.0x" value="2" />
-      </el-select>
-      <el-tooltip content="全屏播放" placement="top">
-        <el-button circle :icon="FullScreen" :disabled="disabled" @click="emit('fullscreen')" />
-      </el-tooltip>
+        <el-icon><DArrowLeft /></el-icon>
+      </button>
+
+      <button
+        class="control-button primary"
+        type="button"
+        :title="playing ? '暂停' : '播放'"
+        :disabled="disabled"
+        @click="emit('playPause')"
+      >
+        <el-icon>
+          <VideoPause v-if="playing" />
+          <VideoPlay v-else />
+        </el-icon>
+      </button>
+
+      <button
+        class="control-button"
+        type="button"
+        title="下一个文件"
+        :disabled="disabled"
+        @click="emit('next')"
+      >
+        <el-icon><DArrowRight /></el-icon>
+      </button>
+    </div>
+
+    <label
+      class="range-wrap progress-wrap"
+      :style="{ '--fill': `${progressPercent}%` }"
+      aria-label="播放进度"
+    >
+      <input
+        type="range"
+        min="0"
+        :max="hasDuration ? duration : 0"
+        step="0.1"
+        :value="currentTime"
+        :disabled="disabled || !hasDuration"
+        @input="handleSeek"
+      />
+    </label>
+
+    <div class="side-controls" aria-label="声音和倍速">
+      <el-icon class="volume-icon"><Headset /></el-icon>
+      <label
+        class="range-wrap volume-wrap"
+        :style="{ '--fill': `${volumePercent}%` }"
+        aria-label="音量"
+      >
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          :value="volume"
+          :disabled="disabled"
+          @input="handleVolume"
+        />
+      </label>
+      <button
+        class="speed-button"
+        type="button"
+        title="切换倍速"
+        :disabled="disabled"
+        @click="togglePlaybackRate"
+      >
+        {{ playbackRate.toFixed(playbackRate % 1 === 0 ? 1 : 2) }}x
+      </button>
     </div>
   </footer>
 </template>
@@ -105,12 +152,12 @@ function formatTime(seconds: number) {
 <style scoped lang="scss">
 .player-controls {
   display: grid;
-  min-height: 42px;
+  min-height: 44px;
   grid-template-columns: auto auto minmax(120px, 1fr) auto;
   align-items: center;
   gap: 10px;
-  padding: 8px 2px 0;
-  background: transparent;
+  padding: 8px 0 0;
+  color: var(--ocp-text-inverse-muted);
 }
 
 .time-readout,
@@ -118,72 +165,175 @@ function formatTime(seconds: number) {
 .side-controls {
   display: flex;
   align-items: center;
-  gap: 7px;
-}
-
-.time-readout,
-.side-controls {
-  color: var(--ocp-text-inverse-muted);
 }
 
 .time-readout {
+  min-width: 88px;
+  gap: 4px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
-.transport :deep(.el-button),
-.side-controls :deep(.el-button) {
+.time-readout i {
+  color: rgba(146, 165, 189, 0.58);
+  font-style: normal;
+}
+
+.transport {
+  gap: 8px;
+}
+
+.control-button,
+.speed-button {
+  display: inline-grid;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.055);
+  color: #d8e5f7;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.control-button {
   width: 28px;
   height: 28px;
-  min-height: 28px;
-  --el-button-bg-color: rgba(255, 255, 255, 0.055);
-  --el-button-border-color: rgba(148, 163, 184, 0.18);
-  --el-button-text-color: #d8e5f7;
-  --el-button-hover-bg-color: rgba(255, 255, 255, 0.1);
-  --el-button-hover-border-color: rgba(148, 163, 184, 0.34);
-  --el-button-hover-text-color: #ffffff;
+  border-radius: 999px;
 }
 
-.transport :deep(.el-button--primary) {
-  --el-button-bg-color: var(--ocp-primary);
-  --el-button-border-color: var(--ocp-primary);
-  --el-button-hover-bg-color: var(--ocp-primary-hover);
-  --el-button-hover-border-color: var(--ocp-primary-hover);
+.control-button.primary {
+  border-color: rgba(59, 130, 246, 0.72);
+  background: var(--ocp-primary);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.26);
 }
 
-.progress {
+.control-button:hover,
+.speed-button:hover {
+  border-color: rgba(148, 163, 184, 0.34);
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.control-button.primary:hover {
+  border-color: rgba(96, 165, 250, 0.86);
+  background: var(--ocp-primary-hover);
+}
+
+.control-button:active,
+.speed-button:active {
+  transform: translateY(1px);
+}
+
+.control-button:disabled,
+.speed-button:disabled,
+.range-wrap input:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.range-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 20px;
+}
+
+.range-wrap::before {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 4px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, var(--ocp-primary) var(--fill), transparent var(--fill)),
+    rgba(148, 163, 184, 0.22);
+  content: "";
+}
+
+.range-wrap input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.range-wrap input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.range-wrap input::-webkit-slider-thumb {
+  width: 10px;
+  height: 10px;
+  margin-top: -3px;
+  appearance: none;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--ocp-primary);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+}
+
+.range-wrap input::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.range-wrap input::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--ocp-primary);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+}
+
+.progress-wrap {
   min-width: 120px;
 }
 
-.volume {
-  width: 72px;
+.side-controls {
+  gap: 8px;
 }
 
-.progress :deep(.el-slider__runway),
-.volume :deep(.el-slider__runway) {
-  height: 3px;
-  background-color: rgba(148, 163, 184, 0.24);
+.volume-icon {
+  color: #a9bbd0;
 }
 
-.progress :deep(.el-slider__button),
-.volume :deep(.el-slider__button) {
-  width: 10px;
-  height: 10px;
+.volume-wrap {
+  width: 78px;
 }
 
-.speed {
-  width: 58px;
-}
-
-.speed :deep(.el-select__wrapper) {
-  min-height: 28px;
-  padding: 0 6px;
-  background: rgba(255, 255, 255, 0.055);
-  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.18) inset;
-}
-
-.speed :deep(.el-select__selected-item) {
-  color: #d8e5f7;
+.speed-button {
+  min-width: 58px;
+  height: 28px;
+  border-radius: 6px;
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1080px) {
+  .player-controls {
+    grid-template-columns: auto auto minmax(90px, 1fr) auto;
+    gap: 8px;
+  }
+
+  .volume-wrap {
+    width: 58px;
+  }
+
+  .speed-button {
+    min-width: 50px;
+  }
 }
 </style>

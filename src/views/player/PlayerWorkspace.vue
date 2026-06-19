@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -23,16 +23,18 @@ const appWindow = isTauri() ? getCurrentWindow() : null;
 const loadingRootId = ref("");
 const searchKeyword = ref("");
 const playbackMessage = ref("添加本地文件夹后开始播放");
-const videoElement = ref<HTMLVideoElement | null>(null);
+const mediaElement = ref<HTMLMediaElement | null>(null);
 const mediaSourceUrl = ref("");
 const playing = ref(false);
 const currentTime = ref(0);
 const duration = ref(0);
 const volume = ref(0.8);
 const playbackRate = ref(1);
+const playerFullscreen = ref(false);
 
 let hlsPlayer: Hls | null = null;
 let mpegtsPlayer: mpegts.Player | null = null;
+let playbackSyncTimer: number | null = null;
 
 const activeRoot = computed(() => library.activeRoot);
 const selectedEngineName = computed(() =>
@@ -56,7 +58,13 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  document.removeEventListener("fullscreenchange", syncFullscreenState);
+  stopPlaybackSync();
   destroyPlaybackAdapters();
+});
+
+onMounted(() => {
+  document.addEventListener("fullscreenchange", syncFullscreenState);
 });
 
 async function chooseFolder() {
@@ -117,6 +125,7 @@ function handleSelect(node: MediaTreeNode) {
     id: node.id,
     name: node.name,
     path: node.path,
+    kind: node.kind,
     engine: node.engine
   };
 
@@ -127,6 +136,7 @@ function handleSelect(node: MediaTreeNode) {
 
 async function loadSelectedMedia(media: SelectedMedia | null) {
   destroyPlaybackAdapters();
+  stopPlaybackSync();
   mediaSourceUrl.value = "";
   playing.value = false;
   currentTime.value = 0;
@@ -162,21 +172,41 @@ async function loadSelectedMedia(media: SelectedMedia | null) {
 }
 
 function attachPlaybackAdapter(media: SelectedMedia, sourceUrl: string) {
-  const video = videoElement.value;
+  const video = mediaElement.value;
   if (!video) return;
 
+  video.removeAttribute("src");
+  video.load();
   video.volume = volume.value;
   video.playbackRate = playbackRate.value;
 
-  if (media.engine === "mpegts" && mpegts.getFeatureList().mseLivePlayback) {
+  if (media.engine === "mpegts") {
+    if (!mpegts.isSupported() || !mpegts.getFeatureList().msePlayback) {
+      playbackMessage.value = "当前环境不支持 MPEG-TS 内置播放";
+      return;
+    }
+
     mpegtsPlayer = mpegts.createPlayer({
       type: "mpegts",
       url: sourceUrl,
       isLive: false
+    }, {
+      seekType: "range",
+      rangeLoadZeroStart: true,
+      accurateSeek: true
+    });
+    mpegtsPlayer.on(mpegts.Events.MEDIA_INFO, (mediaInfo: mpegts.MSEPlayerMediaInfo) => {
+      const seconds = normalizeDuration(mediaInfo.duration, video.duration);
+      if (seconds > 0) duration.value = seconds;
+    });
+    mpegtsPlayer.on(mpegts.Events.ERROR, (_type: string, detail: string) => {
+      playbackMessage.value = `MPEG-TS 播放失败：${detail}`;
+      ElMessage.warning(playbackMessage.value);
     });
     mpegtsPlayer.attachMediaElement(video);
     mpegtsPlayer.load();
     playbackMessage.value = "MPEG-TS 已加载";
+    startPlaybackSync();
     return;
   }
 
@@ -185,11 +215,13 @@ function attachPlaybackAdapter(media: SelectedMedia, sourceUrl: string) {
     hlsPlayer.loadSource(sourceUrl);
     hlsPlayer.attachMedia(video);
     playbackMessage.value = "HLS 已加载";
+    startPlaybackSync();
     return;
   }
 
   video.src = sourceUrl;
   video.load();
+  startPlaybackSync();
 }
 
 function destroyPlaybackAdapters() {
@@ -199,12 +231,14 @@ function destroyPlaybackAdapters() {
   mpegtsPlayer = null;
 }
 
-function setVideoElement(element: HTMLVideoElement | null) {
-  videoElement.value = element;
+function setMediaElement(element: HTMLMediaElement | null) {
+  mediaElement.value = element;
+  syncMetadata();
+  syncTime();
 }
 
 async function togglePlayPause() {
-  const video = videoElement.value;
+  const video = mediaElement.value;
   if (!video || !library.selectedMedia) return;
 
   if (video.paused) {
@@ -220,7 +254,7 @@ async function togglePlayPause() {
 }
 
 function seekTo(value: number) {
-  const video = videoElement.value;
+  const video = mediaElement.value;
   if (!video || !Number.isFinite(value)) return;
   video.currentTime = value;
   currentTime.value = value;
@@ -228,28 +262,43 @@ function seekTo(value: number) {
 
 function setVolume(value: number) {
   volume.value = Math.min(1, Math.max(0, value));
-  if (videoElement.value) videoElement.value.volume = volume.value;
+  if (mediaElement.value) mediaElement.value.volume = volume.value;
 }
 
 function setPlaybackRate(value: number) {
   playbackRate.value = value;
-  if (videoElement.value) videoElement.value.playbackRate = value;
+  if (mediaElement.value) mediaElement.value.playbackRate = value;
 }
 
 function syncMetadata() {
-  const video = videoElement.value;
+  const video = mediaElement.value;
   if (!video) return;
-  duration.value = Number.isFinite(video.duration) ? video.duration : 0;
+  const seconds = normalizeDuration(video.duration, duration.value);
+  if (seconds > 0) duration.value = seconds;
 }
 
 function syncTime() {
-  const video = videoElement.value;
+  const video = mediaElement.value;
   if (!video) return;
   currentTime.value = video.currentTime;
+  const seconds = normalizeDuration(video.duration, duration.value);
+  if (seconds > 0) duration.value = seconds;
+  playing.value = !video.paused && !video.ended;
 }
 
 function setPlayingState(value: boolean) {
   playing.value = value;
+}
+
+function startPlaybackSync() {
+  stopPlaybackSync();
+  playbackSyncTimer = window.setInterval(syncTime, 300);
+}
+
+function stopPlaybackSync() {
+  if (playbackSyncTimer === null) return;
+  window.clearInterval(playbackSyncTimer);
+  playbackSyncTimer = null;
 }
 
 function playPrevious() {
@@ -270,16 +319,32 @@ function playAdjacent(direction: -1 | 1) {
   handleSelect(items[nextIndex]);
 }
 
-async function requestPlayerFullscreen() {
-  const video = videoElement.value;
-  if (!video) return;
+async function requestPlayerFullscreen(element: HTMLElement) {
+  try {
+    await element.requestFullscreen();
+    playerFullscreen.value = true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ElMessage.warning(`全屏失败：${message}`);
+  }
+}
 
-  if (document.fullscreenElement) {
-    await document.exitFullscreen();
-    return;
+async function exitPlayerFullscreen() {
+  if (!document.fullscreenElement) return;
+  await document.exitFullscreen();
+}
+
+function syncFullscreenState() {
+  playerFullscreen.value = Boolean(document.fullscreenElement);
+}
+
+function normalizeDuration(primary: number | undefined, fallback = 0) {
+  const value = Number(primary);
+  if (Number.isFinite(value) && value > 0) {
+    return value > 24 * 60 * 60 ? value / 1000 : value;
   }
 
-  await video.requestFullscreen();
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
 }
 
 function filterTree(nodes: MediaTreeNode[], keyword: string): MediaTreeNode[] {
@@ -391,15 +456,24 @@ function showWindowActionError(error: unknown) {
             :message="playbackMessage"
             :engine-name="selectedEngineName"
             :playing="playing"
+            :current-time="currentTime"
             :duration="duration"
+            :volume="volume"
+            :playback-rate="playbackRate"
+            :fullscreen="playerFullscreen"
             @add-folder="chooseFolder"
             @previous="playPrevious"
             @next="playNext"
             @play-pause="togglePlayPause"
             @fullscreen="requestPlayerFullscreen"
-            @video-mounted="setVideoElement"
+            @exit-fullscreen="exitPlayerFullscreen"
+            @media-mounted="setMediaElement"
             @loaded-metadata="syncMetadata"
+            @duration-change="syncMetadata"
             @time-update="syncTime"
+            @seek="seekTo"
+            @volume="setVolume"
+            @rate="setPlaybackRate"
             @play="setPlayingState(true)"
             @pause="setPlayingState(false)"
             @ended="playNext"
@@ -417,7 +491,6 @@ function showWindowActionError(error: unknown) {
             @seek="seekTo"
             @volume="setVolume"
             @rate="setPlaybackRate"
-            @fullscreen="requestPlayerFullscreen"
           />
         </section>
 
