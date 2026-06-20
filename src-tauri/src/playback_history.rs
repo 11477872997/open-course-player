@@ -22,8 +22,8 @@ pub fn load_playback_history(app: AppHandle) -> Result<PlaybackHistory, String> 
         return Ok(PlaybackHistory::default());
     }
 
-    let content = fs::read_to_string(&path)
-        .map_err(|error| format!("读取历史记录失败：{error}"))?;
+    let content =
+        fs::read_to_string(&path).map_err(|error| format!("读取历史记录失败：{error}"))?;
     serde_json::from_str(&content).map_err(|error| format!("解析历史记录失败：{error}"))
 }
 

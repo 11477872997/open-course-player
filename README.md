@@ -19,7 +19,7 @@
 | 桌面壳 | Tauri 2 | 轻量桌面端打包和 Rust 后端桥接 |
 | 前端 | Vue 3 + TypeScript + Vite | 播放器界面、目录树、状态编排 |
 | UI | Element Plus | 树、按钮、弹框、设置面板 |
-| 后端 | Rust | 目录扫描、本地媒体服务、mpv 进程控制 |
+| 后端 | Rust | 目录扫描、本地媒体服务、FFmpeg 转码缓存、mpv 进程控制 |
 | 内置播放 | HTML5 视频 + mpegts.js + hls.js | `.ts`、`.m3u8`、`.mp4` 等桌面网页视图可播格式 |
 | 原生兜底 | mpv 随包程序 | 主流本地视频格式、字幕和复杂编码兜底 |
 
@@ -30,6 +30,7 @@
 | `.ts`, `.m2ts`, `.mts` | 本地 HTTP 媒体服务 + `mpegts.js` | mpv |
 | `.m3u8`, HTTP-FLV, fMP4, H.265 流 | EasyPlayer.js / `hls.js` | mpv |
 | `.mp4`, `.m4v`, `.webm`, `.mp3`, `.wav` | HTML5 video/audio | mpv |
+| `.sz` | FFmpeg 转为兼容 MP4 缓存后内置播放 | 明确错误提示，不自动跳外部播放器 |
 | `.mkv`, `.avi`, `.flv`, `.mov`, `.wmv`, `.rmvb`, `.vob` | mpv | 外部打开 |
 | `.srt`, `.ass`, `.vtt` | mpv 字幕加载 | WebVTT 能力范围内支持 |
 
@@ -92,7 +93,7 @@ The first target is stable Windows playback for `.ts` course files. The long-ter
 | Desktop shell | Tauri 2 | Lightweight desktop packaging and Rust bridge |
 | Frontend | Vue 3 + TypeScript + Vite | Player UI, folder tree, state orchestration |
 | UI | Element Plus | Tree, buttons, dialogs, settings |
-| Backend | Rust | Directory scanning, local media service, mpv process control |
+| Backend | Rust | Directory scanning, local media service, FFmpeg transcode cache, mpv process control |
 | Built-in playback | HTML5 video + mpegts.js + hls.js | `.ts`, `.m3u8`, `.mp4`, and WebView-compatible formats |
 | Native fallback | mpv sidecar | Mainstream local video formats, subtitles, and complex codecs |
 

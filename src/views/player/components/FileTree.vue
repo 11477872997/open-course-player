@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ArrowRight, VideoPlay } from "@element-plus/icons-vue";
+import { ArrowRight, Document, VideoPlay } from "@element-plus/icons-vue";
 import type { MediaTreeNode } from "../../../types/media";
 
 const props = defineProps<{
@@ -54,7 +54,8 @@ function handleContextMenu(node: MediaTreeNode, event: MouseEvent) {
 
           <template v-else>
             <span class="timeline-dot">
-              <el-icon v-if="data.id === activeMediaId"><VideoPlay /></el-icon>
+              <el-icon v-if="data.kind === 'document'"><Document /></el-icon>
+              <el-icon v-else-if="data.id === activeMediaId"><VideoPlay /></el-icon>
             </span>
             <span class="chapter-name" :title="data.name">{{ data.name }}</span>
           </template>

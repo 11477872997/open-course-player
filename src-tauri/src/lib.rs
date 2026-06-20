@@ -14,6 +14,7 @@ pub fn run() {
             media_server::create_media_source,
             media_server::create_subtitle_source,
             media_server::find_subtitle_tracks,
+            media_server::transcode_media_to_compatible_mp4,
             mpv::mpv_play,
             playback_history::load_playback_history,
             playback_history::save_playback_history

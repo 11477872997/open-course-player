@@ -1,8 +1,9 @@
 use serde::Serialize;
 use std::{
     collections::hash_map::DefaultHasher,
-    fs,
+    fs::{self, File},
     hash::{Hash, Hasher},
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -88,7 +89,7 @@ fn scan_children(root: &Path, dir: &Path, depth: usize) -> Result<Vec<MediaTreeN
             continue;
         }
 
-        let classification = classify_file(&name);
+        let classification = classify_file(&safe_path, &name);
         if classification.kind == "unknown" {
             continue;
         }
@@ -113,12 +114,24 @@ struct Classification {
     engine: &'static str,
 }
 
-fn classify_file(name: &str) -> Classification {
+fn classify_file(path: &Path, name: &str) -> Classification {
     let ext = Path::new(name)
         .extension()
         .and_then(|value| value.to_str())
         .map(|value| format!(".{}", value.to_lowercase()))
         .unwrap_or_default();
+
+    if is_document_extension(&ext) {
+        return Classification {
+            kind: "document",
+            playable: true,
+            engine: "document",
+        };
+    }
+
+    if let Some(format) = sniff_file_format(path) {
+        return classify_format(format);
+    }
 
     match ext.as_str() {
         ".ts" | ".m2ts" | ".mts" => Classification {
@@ -131,7 +144,7 @@ fn classify_file(name: &str) -> Classification {
             playable: true,
             engine: "easy-player",
         },
-        ".mp4" | ".m4v" | ".webm" | ".ogv" => Classification {
+        ".mp4" | ".m4v" | ".webm" | ".ogv" | ".sz" => Classification {
             kind: "video",
             playable: true,
             engine: "web-video",
@@ -141,7 +154,8 @@ fn classify_file(name: &str) -> Classification {
             playable: true,
             engine: "web-video",
         },
-        ".mkv" | ".avi" | ".flv" | ".mov" | ".wmv" | ".rmvb" | ".vob" | ".3gp" | ".mpeg" | ".mpg" => Classification {
+        ".mkv" | ".avi" | ".flv" | ".mov" | ".wmv" | ".rmvb" | ".vob" | ".3gp" | ".mpeg"
+        | ".mpg" => Classification {
             kind: "video",
             playable: true,
             engine: "mpv",
@@ -159,6 +173,107 @@ fn classify_file(name: &str) -> Classification {
     }
 }
 
+fn is_document_extension(ext: &str) -> bool {
+    matches!(
+        ext,
+        ".pdf" | ".docx" | ".doc" | ".xlsx" | ".xls" | ".pptx" | ".ppt"
+    )
+}
+
+#[derive(Clone, Copy)]
+enum SniffedFormat {
+    MpegTs,
+    Mp4,
+    Mp3,
+    Wav,
+    Flac,
+    Ogg,
+    Webm,
+}
+
+fn classify_format(format: SniffedFormat) -> Classification {
+    match format {
+        SniffedFormat::MpegTs => Classification {
+            kind: "video",
+            playable: true,
+            engine: "mpegts",
+        },
+        SniffedFormat::Mp4 | SniffedFormat::Webm => Classification {
+            kind: "video",
+            playable: true,
+            engine: "web-video",
+        },
+        SniffedFormat::Mp3 | SniffedFormat::Wav | SniffedFormat::Flac | SniffedFormat::Ogg => {
+            Classification {
+                kind: "audio",
+                playable: true,
+                engine: "web-video",
+            }
+        }
+    }
+}
+
+fn sniff_file_format(path: &Path) -> Option<SniffedFormat> {
+    let mut file = File::open(path).ok()?;
+    let mut buffer = [0u8; 64 * 1024];
+    let read = file.read(&mut buffer).ok()?;
+    let data = &buffer[..read];
+
+    if data.get(0..5) == Some(b"%PDF-") {
+        return None;
+    }
+
+    if looks_like_mpeg_ts(data) {
+        return Some(SniffedFormat::MpegTs);
+    }
+
+    if data.len() >= 12 && data.get(4..8) == Some(b"ftyp") {
+        return Some(SniffedFormat::Mp4);
+    }
+
+    if data.get(0..4) == Some(b"\x1a\x45\xdf\xa3") {
+        return Some(SniffedFormat::Webm);
+    }
+
+    if data.get(0..3) == Some(b"ID3") || looks_like_mp3_frame(data) {
+        return Some(SniffedFormat::Mp3);
+    }
+
+    if data.get(0..4) == Some(b"RIFF") && data.get(8..12) == Some(b"WAVE") {
+        return Some(SniffedFormat::Wav);
+    }
+
+    if data.get(0..4) == Some(b"fLaC") {
+        return Some(SniffedFormat::Flac);
+    }
+
+    if data.get(0..4) == Some(b"OggS") {
+        return Some(SniffedFormat::Ogg);
+    }
+
+    None
+}
+
+fn looks_like_mpeg_ts(data: &[u8]) -> bool {
+    [188usize, 192, 204].iter().copied().any(|packet_size| {
+        let search_len = data.len().min(packet_size * 8);
+        (0..packet_size.min(search_len)).any(|offset| {
+            let possible = ((data.len().saturating_sub(offset)) / packet_size).min(5);
+            possible >= 3
+                && (0..possible).all(|nth| {
+                    let index = offset + nth * packet_size;
+                    index < data.len() && data[index] == 0x47
+                })
+        })
+    })
+}
+
+fn looks_like_mp3_frame(data: &[u8]) -> bool {
+    data.windows(2)
+        .take(1024)
+        .any(|bytes| bytes[0] == 0xff && bytes[1] & 0xe0 == 0xe0)
+}
+
 fn is_hidden_name(name: &str) -> bool {
     name.starts_with('.') || name.eq_ignore_ascii_case("System Volume Information")
 }
@@ -171,8 +286,5 @@ fn stable_id(path: &Path) -> String {
 
 fn display_path(path: &Path) -> String {
     let value = path.to_string_lossy().to_string();
-    value
-        .strip_prefix(r"\\?\")
-        .unwrap_or(&value)
-        .to_string()
+    value.strip_prefix(r"\\?\").unwrap_or(&value).to_string()
 }

@@ -10,3 +10,7 @@ export interface MediaSourceInfo {
 export function createMediaSource(path: string) {
   return invoke<MediaSourceInfo>("create_media_source", { path });
 }
+
+export function transcodeMediaToCompatibleMp4(path: string) {
+  return invoke<MediaSourceInfo>("transcode_media_to_compatible_mp4", { path });
+}

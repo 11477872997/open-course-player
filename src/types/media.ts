@@ -1,6 +1,6 @@
-export type PlayerEngine = "web-video" | "mpegts" | "hls" | "easy-player" | "mpv";
+export type PlayerEngine = "web-video" | "mpegts" | "hls" | "easy-player" | "mpv" | "document";
 
-export type MediaKind = "video" | "audio" | "subtitle" | "folder" | "unknown";
+export type MediaKind = "video" | "audio" | "document" | "subtitle" | "folder" | "unknown";
 
 export interface MediaTreeNode {
   id: string;
