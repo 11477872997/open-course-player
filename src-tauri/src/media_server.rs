@@ -27,6 +27,26 @@ pub struct MediaSourceInfo {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SzMediaDiagnostic {
+    container: String,
+    video_codec: Option<String>,
+    audio_codec: Option<String>,
+    video_sample_count: usize,
+    audio_sample_count: usize,
+    duration: Option<f64>,
+    first_video_sample_size: Option<u32>,
+    first_video_sample_head: Option<String>,
+    first_audio_sample_size: Option<u32>,
+    first_audio_sample_head: Option<String>,
+    has_standard_protection_boxes: bool,
+    looks_like_standard_h264: bool,
+    looks_like_standard_aac: bool,
+    mdat_entropy: Option<f64>,
+    conclusion: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SubtitleTrackInfo {
     label: String,
     path: String,
@@ -158,59 +178,24 @@ pub fn transcode_media_to_compatible_mp4(path: String) -> Result<MediaSourceInfo
 
     let output = compatible_mp4_cache_path(&path)?;
     if !is_valid_cached_file(&output) {
-        let temp_output = output.with_extension("mp4.tmp");
-        let _ = fs::remove_file(&temp_output);
-        let mut ffmpeg = ffmpeg_command()?;
-        let status = ffmpeg
-            .args([
-                "-hide_banner",
-                "-y",
-                "-i",
-            ])
-            .arg(&path)
-            .args([
-                "-map",
-                "0:v:0",
-                "-map",
-                "0:a?",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "23",
-                "-pix_fmt",
-                "yuv420p",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "128k",
-                "-movflags",
-                "+faststart",
-            ])
-            .arg(&temp_output)
-            .status()
-            .map_err(|error| {
-                format!(
-                    "启动 FFmpeg 失败：{error}。请安装 FFmpeg、安装格式工厂，或设置 OPEN_COURSE_PLAYER_FFMPEG 指向 ffmpeg.exe"
-                )
-            })?;
-
-        if !status.success() {
-            let _ = fs::remove_file(&temp_output);
-            return Err(format!("FFmpeg 转码失败，退出码：{status}"));
-        }
-
-        if !is_valid_cached_file(&temp_output) {
-            let _ = fs::remove_file(&temp_output);
-            return Err("FFmpeg 转码失败：输出文件为空".to_string());
-        }
-
-        fs::rename(&temp_output, &output)
-            .map_err(|error| format!("保存 FFmpeg 转码缓存失败：{error}"))?;
+        run_ffmpeg_transcode(&path, &output)?;
     }
 
     create_media_source(output.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn diagnose_sz_media(path: String) -> Result<SzMediaDiagnostic, String> {
+    let path = normalize_path(&path);
+    let path = PathBuf::from(path)
+        .canonicalize()
+        .map_err(|error| format!("媒体文件不存在或无法读取：{error}"))?;
+
+    if !path.is_file() {
+        return Err("请选择一个媒体文件".to_string());
+    }
+
+    diagnose_mp4_like_sz(&path)
 }
 
 fn cached_media_info(path: &Path, size: u64) -> CachedMediaInfo {
@@ -690,6 +675,427 @@ struct Mp4Atom {
     kind: [u8; 4],
 }
 
+#[derive(Clone, Debug)]
+struct Mp4TrackSummary {
+    codec: String,
+    sample_count: usize,
+    first_sample_offset: Option<u64>,
+    first_sample_size: Option<u32>,
+}
+
+fn diagnose_mp4_like_sz(path: &Path) -> Result<SzMediaDiagnostic, String> {
+    let mut source =
+        File::open(path).map_err(|error| format!("无法打开 .sz 文件用于结构诊断：{error}"))?;
+    let file_size = source
+        .metadata()
+        .map_err(|error| format!("无法读取 .sz 文件信息：{error}"))?
+        .len();
+    let atoms = read_mp4_top_level_atoms(&mut source, file_size)?;
+    let Some(moov) = atoms.iter().copied().find(|atom| &atom.kind == b"moov") else {
+        return Ok(SzMediaDiagnostic {
+            container: "unknown".to_string(),
+            video_codec: None,
+            audio_codec: None,
+            video_sample_count: 0,
+            audio_sample_count: 0,
+            duration: None,
+            first_video_sample_size: None,
+            first_video_sample_head: None,
+            first_audio_sample_size: None,
+            first_audio_sample_head: None,
+            has_standard_protection_boxes: false,
+            looks_like_standard_h264: false,
+            looks_like_standard_aac: false,
+            mdat_entropy: None,
+            conclusion: "当前文件不是可识别的 MP4 外壳 .sz".to_string(),
+        });
+    };
+    let Some(mdat) = atoms.iter().copied().find(|atom| &atom.kind == b"mdat") else {
+        return Err("当前 .sz 是 MP4 外壳，但没有 mdat 媒体数据".to_string());
+    };
+
+    let moov_data = read_file_range(path, moov.start, moov.size)?;
+    let duration = mp4_duration_from_moov(&moov_data);
+    let tracks = summarize_mp4_tracks(&moov_data);
+    let video_track = tracks.iter().find(|track| track.codec == "avc1");
+    let audio_track = tracks.iter().find(|track| track.codec == "mp4a");
+    let video_head = video_track.and_then(|track| {
+        read_sample_head(path, track.first_sample_offset, track.first_sample_size)
+    });
+    let audio_head = audio_track.and_then(|track| {
+        read_sample_head(path, track.first_sample_offset, track.first_sample_size)
+    });
+    let looks_like_standard_h264 = video_head
+        .as_ref()
+        .is_some_and(|bytes| looks_like_avcc_h264_sample(bytes));
+    let looks_like_standard_aac = audio_head
+        .as_ref()
+        .is_some_and(|bytes| looks_like_aac_sample(bytes));
+    let has_standard_protection_boxes = contains_any_atom_marker(
+        &moov_data,
+        &[
+            b"sinf", b"encv", b"enca", b"pssh", b"tenc", b"senc", b"saio", b"saiz",
+        ],
+    );
+    let entropy_size = (mdat.size.saturating_sub(mdat.header_size)).min(64 * 1024);
+    let mdat_entropy = (entropy_size > 0)
+        .then(|| read_file_range(path, mdat.start + mdat.header_size, entropy_size).ok())
+        .flatten()
+        .map(|bytes| byte_entropy(&bytes));
+    let conclusion = if video_track.is_some()
+        && audio_track.is_some()
+        && !looks_like_standard_h264
+        && !looks_like_standard_aac
+    {
+        "MP4 外壳和 avc1/mp4a 轨道表存在，但首段音视频帧不是公开标准 H.264/AAC，常规 FFmpeg 转码无法直接解码。"
+            .to_string()
+    } else if video_track.is_some() && !looks_like_standard_h264 {
+        "MP4 外壳存在，但首段视频帧不是公开标准 H.264 NAL 数据。".to_string()
+    } else if audio_track.is_some() && !looks_like_standard_aac {
+        "MP4 外壳存在，但首段音频帧不是公开标准 AAC 数据。".to_string()
+    } else {
+        "结构看起来接近标准 MP4，可继续尝试 FFmpeg 转码。".to_string()
+    };
+
+    Ok(SzMediaDiagnostic {
+        container: "mp4".to_string(),
+        video_codec: video_track.map(|track| track.codec.clone()),
+        audio_codec: audio_track.map(|track| track.codec.clone()),
+        video_sample_count: video_track.map(|track| track.sample_count).unwrap_or(0),
+        audio_sample_count: audio_track.map(|track| track.sample_count).unwrap_or(0),
+        duration,
+        first_video_sample_size: video_track.and_then(|track| track.first_sample_size),
+        first_video_sample_head: video_head.as_ref().map(|bytes| hex_head(bytes)),
+        first_audio_sample_size: audio_track.and_then(|track| track.first_sample_size),
+        first_audio_sample_head: audio_head.as_ref().map(|bytes| hex_head(bytes)),
+        has_standard_protection_boxes,
+        looks_like_standard_h264,
+        looks_like_standard_aac,
+        mdat_entropy,
+        conclusion,
+    })
+}
+
+fn summarize_mp4_tracks(moov_data: &[u8]) -> Vec<Mp4TrackSummary> {
+    let mut tracks = Vec::new();
+    let moov_body_start = mp4_atom_body_start(moov_data, 0).unwrap_or(8);
+    for trak in find_child_atoms(moov_data, moov_body_start, moov_data.len(), *b"trak") {
+        let Some(stbl) = find_atom_path(moov_data, trak, &[*b"mdia", *b"minf", *b"stbl"]) else {
+            continue;
+        };
+        let codec = find_child_atoms(
+            moov_data,
+            atom_body_start(moov_data, stbl),
+            stbl.1,
+            *b"stsd",
+        )
+        .first()
+        .and_then(|atom| mp4_stsd_codec(moov_data, *atom))
+        .unwrap_or_else(|| "unknown".to_string());
+        let sample_sizes = find_child_atoms(
+            moov_data,
+            atom_body_start(moov_data, stbl),
+            stbl.1,
+            *b"stsz",
+        )
+        .first()
+        .map(|atom| parse_mp4_stsz(moov_data, *atom))
+        .unwrap_or_default();
+        let chunk_offsets = find_child_atoms(
+            moov_data,
+            atom_body_start(moov_data, stbl),
+            stbl.1,
+            *b"stco",
+        )
+        .first()
+        .map(|atom| parse_mp4_stco(moov_data, *atom))
+        .unwrap_or_default();
+        let stsc = find_child_atoms(
+            moov_data,
+            atom_body_start(moov_data, stbl),
+            stbl.1,
+            *b"stsc",
+        )
+        .first()
+        .map(|atom| parse_mp4_stsc(moov_data, *atom))
+        .unwrap_or_default();
+        let first_sample_offset = first_mp4_sample_offset(&chunk_offsets, &stsc);
+
+        tracks.push(Mp4TrackSummary {
+            codec,
+            sample_count: sample_sizes.len(),
+            first_sample_offset,
+            first_sample_size: sample_sizes.first().copied(),
+        });
+    }
+
+    tracks
+}
+
+fn mp4_duration_from_moov(moov_data: &[u8]) -> Option<f64> {
+    let body_start = mp4_atom_body_start(moov_data, 0).unwrap_or(8);
+    let mvhd = find_child_atoms(moov_data, body_start, moov_data.len(), *b"mvhd")
+        .into_iter()
+        .next()?;
+    let start = atom_body_start(moov_data, mvhd);
+    if start >= mvhd.1 || start >= moov_data.len() {
+        return None;
+    }
+
+    let version = *moov_data.get(start)?;
+    let (timescale_offset, duration_offset, duration_size) = if version == 1 {
+        (start.checked_add(20)?, start.checked_add(24)?, 8usize)
+    } else {
+        (start.checked_add(12)?, start.checked_add(16)?, 4usize)
+    };
+
+    if timescale_offset.checked_add(4)? > mvhd.1
+        || duration_offset.checked_add(duration_size)? > mvhd.1
+        || duration_offset.checked_add(duration_size)? > moov_data.len()
+    {
+        return None;
+    }
+
+    let timescale = u32::from_be_bytes(
+        moov_data[timescale_offset..timescale_offset + 4]
+            .try_into()
+            .ok()?,
+    );
+    if timescale == 0 {
+        return None;
+    }
+
+    let duration = if duration_size == 8 {
+        u64::from_be_bytes(
+            moov_data[duration_offset..duration_offset + 8]
+                .try_into()
+                .ok()?,
+        )
+    } else {
+        u32::from_be_bytes(
+            moov_data[duration_offset..duration_offset + 4]
+                .try_into()
+                .ok()?,
+        ) as u64
+    };
+
+    let seconds = duration as f64 / timescale as f64;
+    seconds.is_finite().then_some(seconds).filter(|value| *value > 0.0)
+}
+
+fn find_atom_path(data: &[u8], parent: (usize, usize), path: &[[u8; 4]]) -> Option<(usize, usize)> {
+    let mut current = parent;
+    for kind in path {
+        current = find_child_atoms(data, atom_body_start(data, current), current.1, *kind)
+            .into_iter()
+            .next()?;
+    }
+    Some(current)
+}
+
+fn find_child_atoms(data: &[u8], start: usize, end: usize, kind: [u8; 4]) -> Vec<(usize, usize)> {
+    let mut atoms = Vec::new();
+    let mut cursor = start;
+    while cursor.saturating_add(8) <= end && cursor.saturating_add(8) <= data.len() {
+        let size32 = u32::from_be_bytes(data[cursor..cursor + 4].try_into().unwrap()) as usize;
+        let atom_kind = [
+            data[cursor + 4],
+            data[cursor + 5],
+            data[cursor + 6],
+            data[cursor + 7],
+        ];
+        let atom_size = if size32 == 1 {
+            if cursor.saturating_add(16) > end || cursor.saturating_add(16) > data.len() {
+                break;
+            }
+            let size64 = u64::from_be_bytes(data[cursor + 8..cursor + 16].try_into().unwrap());
+            let Ok(size) = usize::try_from(size64) else {
+                break;
+            };
+            size
+        } else if size32 == 0 {
+            end.saturating_sub(cursor)
+        } else {
+            size32
+        };
+
+        if atom_size < 8
+            || cursor.saturating_add(atom_size) > end
+            || cursor.saturating_add(atom_size) > data.len()
+        {
+            break;
+        }
+
+        if atom_kind == kind {
+            atoms.push((cursor, cursor + atom_size));
+        }
+        cursor += atom_size;
+    }
+
+    atoms
+}
+
+fn atom_body_start(data: &[u8], atom: (usize, usize)) -> usize {
+    mp4_atom_body_start(data, atom.0).unwrap_or(atom.0.saturating_add(8))
+}
+
+fn mp4_atom_body_start(data: &[u8], start: usize) -> Option<usize> {
+    if start.saturating_add(8) > data.len() {
+        return None;
+    }
+    let size32 = u32::from_be_bytes(data[start..start + 4].try_into().ok()?);
+    Some(if size32 == 1 { start + 16 } else { start + 8 })
+}
+
+fn mp4_stsd_codec(data: &[u8], atom: (usize, usize)) -> Option<String> {
+    let body_start = atom_body_start(data, atom);
+    let entry_start = body_start.checked_add(8)?;
+    if entry_start.checked_add(8)? > atom.1 || entry_start.checked_add(8)? > data.len() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&data[entry_start + 4..entry_start + 8]).to_string())
+}
+
+fn parse_mp4_stsz(data: &[u8], atom: (usize, usize)) -> Vec<u32> {
+    let body_start = atom_body_start(data, atom);
+    if body_start.saturating_add(12) > atom.1 || body_start.saturating_add(12) > data.len() {
+        return Vec::new();
+    }
+    let sample_size = u32::from_be_bytes(data[body_start + 4..body_start + 8].try_into().unwrap());
+    let count =
+        u32::from_be_bytes(data[body_start + 8..body_start + 12].try_into().unwrap()) as usize;
+    if sample_size > 0 {
+        return vec![sample_size; count];
+    }
+    let table_start = body_start + 12;
+    let available = atom
+        .1
+        .saturating_sub(table_start)
+        .min(data.len().saturating_sub(table_start))
+        / 4;
+    let count = count.min(available);
+    (0..count)
+        .map(|index| {
+            let pos = table_start + index * 4;
+            u32::from_be_bytes(data[pos..pos + 4].try_into().unwrap())
+        })
+        .collect()
+}
+
+fn parse_mp4_stco(data: &[u8], atom: (usize, usize)) -> Vec<u64> {
+    let body_start = atom_body_start(data, atom);
+    if body_start.saturating_add(8) > atom.1 || body_start.saturating_add(8) > data.len() {
+        return Vec::new();
+    }
+    let count =
+        u32::from_be_bytes(data[body_start + 4..body_start + 8].try_into().unwrap()) as usize;
+    let table_start = body_start + 8;
+    let available = atom
+        .1
+        .saturating_sub(table_start)
+        .min(data.len().saturating_sub(table_start))
+        / 4;
+    let count = count.min(available);
+    (0..count)
+        .map(|index| {
+            let pos = table_start + index * 4;
+            u32::from_be_bytes(data[pos..pos + 4].try_into().unwrap()) as u64
+        })
+        .collect()
+}
+
+fn parse_mp4_stsc(data: &[u8], atom: (usize, usize)) -> Vec<(u32, u32, u32)> {
+    let body_start = atom_body_start(data, atom);
+    if body_start.saturating_add(8) > atom.1 || body_start.saturating_add(8) > data.len() {
+        return Vec::new();
+    }
+    let count =
+        u32::from_be_bytes(data[body_start + 4..body_start + 8].try_into().unwrap()) as usize;
+    let table_start = body_start + 8;
+    let available = atom
+        .1
+        .saturating_sub(table_start)
+        .min(data.len().saturating_sub(table_start))
+        / 12;
+    let count = count.min(available);
+    (0..count)
+        .map(|index| {
+            let pos = table_start + index * 12;
+            (
+                u32::from_be_bytes(data[pos..pos + 4].try_into().unwrap()),
+                u32::from_be_bytes(data[pos + 4..pos + 8].try_into().unwrap()),
+                u32::from_be_bytes(data[pos + 8..pos + 12].try_into().unwrap()),
+            )
+        })
+        .collect()
+}
+
+fn first_mp4_sample_offset(chunk_offsets: &[u64], stsc: &[(u32, u32, u32)]) -> Option<u64> {
+    if chunk_offsets.is_empty() {
+        return None;
+    }
+    if stsc
+        .first()
+        .is_some_and(|entry| entry.0 == 1 && entry.1 > 0)
+        || stsc.is_empty()
+    {
+        return chunk_offsets.first().copied();
+    }
+    chunk_offsets.first().copied()
+}
+
+fn read_sample_head(path: &Path, offset: Option<u64>, size: Option<u32>) -> Option<Vec<u8>> {
+    let offset = offset?;
+    let size = u64::from(size?).min(64);
+    read_file_range(path, offset, size).ok()
+}
+
+fn looks_like_avcc_h264_sample(bytes: &[u8]) -> bool {
+    if bytes.len() < 5 {
+        return false;
+    }
+    let size = u32::from_be_bytes(bytes[0..4].try_into().unwrap()) as usize;
+    let nal_type = bytes[4] & 0x1f;
+    size > 0 && size <= bytes.len().saturating_sub(4) && matches!(nal_type, 1 | 5 | 6 | 7 | 8 | 9)
+}
+
+fn looks_like_aac_sample(bytes: &[u8]) -> bool {
+    bytes.len() >= 2 && bytes[0] == 0xff && (bytes[1] & 0xf0) == 0xf0
+}
+
+fn contains_any_atom_marker(data: &[u8], markers: &[&[u8; 4]]) -> bool {
+    markers
+        .iter()
+        .any(|marker| data.windows(4).any(|window| window == marker.as_slice()))
+}
+
+fn byte_entropy(bytes: &[u8]) -> f64 {
+    if bytes.is_empty() {
+        return 0.0;
+    }
+    let mut counts = [0usize; 256];
+    for byte in bytes {
+        counts[*byte as usize] += 1;
+    }
+    counts
+        .iter()
+        .filter(|count| **count > 0)
+        .map(|count| {
+            let p = *count as f64 / bytes.len() as f64;
+            -p * p.log2()
+        })
+        .sum()
+}
+
+fn hex_head(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .take(16)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn prepare_faststart_mp4(path: &Path) -> Result<Option<PathBuf>, String> {
     let mut source =
         File::open(path).map_err(|error| format!("无法打开 MP4 文件用于快启动处理：{error}"))?;
@@ -1002,16 +1408,330 @@ fn compatible_mp4_cache_path(path: &Path) -> Result<PathBuf, String> {
     Ok(dir.join(format!("{:x}.mp4", hasher.finish())))
 }
 
-fn ffmpeg_command() -> Result<Command, String> {
+fn run_ffmpeg_transcode(input: &Path, output: &Path) -> Result<(), String> {
+    let strategies = [
+        TranscodeStrategy {
+            name: "NVIDIA 硬件转码 1080P",
+            args: &[
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-map_metadata",
+                "0",
+                "-vf",
+                "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1",
+                "-c:v",
+                "h264_nvenc",
+                "-preset",
+                "p4",
+                "-cq",
+                "23",
+                "-profile:v",
+                "main",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                "-af",
+                "aresample=async=1:first_pts=0",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-max_muxing_queue_size",
+                "2048",
+                "-movflags",
+                "+faststart",
+            ],
+        },
+        TranscodeStrategy {
+            name: "兼容软转码 1080P",
+            args: &[
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-map_metadata",
+                "0",
+                "-vf",
+                "scale=w=1920:h=1080:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "23",
+                "-profile:v",
+                "main",
+                "-level",
+                "4.1",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                "-af",
+                "aresample=async=1:first_pts=0",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-max_muxing_queue_size",
+                "2048",
+                "-movflags",
+                "+faststart",
+            ],
+        },
+        TranscodeStrategy {
+            name: "保守软转码 720P",
+            args: &[
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-map_metadata",
+                "0",
+                "-vf",
+                "scale=w=1280:h=720:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "faster",
+                "-crf",
+                "24",
+                "-profile:v",
+                "main",
+                "-level",
+                "4.0",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                "-af",
+                "aresample=async=1:first_pts=0",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-max_muxing_queue_size",
+                "2048",
+                "-movflags",
+                "+faststart",
+            ],
+        },
+        TranscodeStrategy {
+            name: "快速重封装",
+            args: &[
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-map_metadata",
+                "0",
+                "-c",
+                "copy",
+                "-bsf:a",
+                "aac_adtstoasc",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-movflags",
+                "+faststart",
+            ],
+        },
+    ];
+
+    let ffmpeg = ffmpeg_path()?;
+    let mut failures = Vec::new();
+
+    for strategy in strategies {
+        let temp_output = output.with_extension(format!("{}.mp4.tmp", strategy.name));
+        let _ = fs::remove_file(&temp_output);
+        let command_output = Command::new(&ffmpeg)
+            .args([
+                "-hide_banner",
+                "-y",
+                "-fflags",
+                "+genpts+discardcorrupt",
+                "-err_detect",
+                "ignore_err",
+                "-analyzeduration",
+                "100M",
+                "-probesize",
+                "100M",
+                "-i",
+            ])
+            .arg(input)
+            .args(strategy.args)
+            .arg(&temp_output)
+            .output()
+            .map_err(|error| {
+                format!(
+                    "启动 FFmpeg 失败：{error}。请安装 FFmpeg、安装格式工厂，或设置 OPEN_COURSE_PLAYER_FFMPEG 指向 ffmpeg.exe"
+                )
+            })?;
+
+        if command_output.status.success() && is_valid_cached_file(&temp_output) {
+            fs::rename(&temp_output, output)
+                .map_err(|error| format!("保存 FFmpeg 转码缓存失败：{error}"))?;
+            return Ok(());
+        }
+
+        let _ = fs::remove_file(&temp_output);
+        let diagnostic = summarize_ffmpeg_failure(&command_output);
+        if let Some(diagnostic) = diagnostic.as_ref() {
+            failures.push(format!(
+                "{}：{}（{}）",
+                strategy.name, command_output.status, diagnostic.message
+            ));
+        } else {
+            failures.push(format!("{}：{}", strategy.name, command_output.status));
+        }
+    }
+
+    if failures
+        .iter()
+        .any(|item| item.contains("不是标准 H.264 NAL 数据"))
+    {
+        return Err(format!(
+            "FFmpeg 已完整尝试转码和重封装，但当前 .sz 的视频帧不是公开标准 H.264 NAL 数据，音频帧也无法按标准 AAC 解码。已尝试 {}",
+            failures.join("；")
+        ));
+    }
+
+    Err(format!("FFmpeg 转码失败，已尝试 {}", failures.join("；")))
+}
+
+struct TranscodeStrategy {
+    name: &'static str,
+    args: &'static [&'static str],
+}
+
+struct FfmpegFailureDiagnostic {
+    message: String,
+}
+
+fn summarize_ffmpeg_failure(output: &std::process::Output) -> Option<FfmpegFailureDiagnostic> {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let combined = format!("{stderr}\n{stdout}");
+    let lower = combined.to_ascii_lowercase();
+
+    if lower.contains("invalid nal unit size")
+        || lower.contains("error splitting the input into nal units")
+    {
+        return Some(FfmpegFailureDiagnostic {
+            message: "文件容器像 MP4，但视频帧不是标准 H.264 NAL 数据".to_string(),
+        });
+    }
+
+    if lower.contains("invalid data found when processing input")
+        || lower.contains("cannot determine format of input stream")
+        || lower.contains("inconsistent channel configuration")
+    {
+        return Some(FfmpegFailureDiagnostic {
+            message:
+                "FFmpeg 能读到文件头，但音视频码流无法按标准格式解码，可能是专有封装或文件损坏"
+                    .to_string(),
+        });
+    }
+
+    let important_lines = collect_important_ffmpeg_lines(&combined);
+    if important_lines.is_empty() {
+        return None;
+    }
+
+    Some(FfmpegFailureDiagnostic {
+        message: important_lines.join(" / "),
+    })
+}
+
+fn collect_important_ffmpeg_lines(text: &str) -> Vec<String> {
+    let patterns = [
+        "error",
+        "invalid",
+        "failed",
+        "not found",
+        "unsupported",
+        "could not",
+        "conversion failed",
+    ];
+    let mut lines = Vec::new();
+
+    for line in text.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let lower = trimmed.to_ascii_lowercase();
+        if !patterns.iter().any(|pattern| lower.contains(pattern)) {
+            continue;
+        }
+
+        let compact = trim_ffmpeg_log_line(trimmed);
+        if !lines.iter().any(|line| line == &compact) {
+            lines.push(compact);
+        }
+
+        if lines.len() >= 3 {
+            break;
+        }
+    }
+
+    lines.reverse();
+    lines
+}
+
+fn trim_ffmpeg_log_line(line: &str) -> String {
+    const MAX_LEN: usize = 160;
+    let mut value = line.replace('\t', " ");
+    while value.contains("  ") {
+        value = value.replace("  ", " ");
+    }
+
+    if value.chars().count() <= MAX_LEN {
+        return value;
+    }
+
+    let mut compact = value.chars().take(MAX_LEN).collect::<String>();
+    compact.push_str("...");
+    compact
+}
+
+fn ffmpeg_path() -> Result<PathBuf, String> {
     if let Some(path) = configured_ffmpeg_path() {
-        return Ok(Command::new(path));
+        return Ok(path);
     }
 
     if let Some(path) = bundled_or_known_ffmpeg_path() {
-        return Ok(Command::new(path));
+        return Ok(path);
     }
 
-    Ok(Command::new("ffmpeg"))
+    if command_exists("ffmpeg") {
+        return Ok(PathBuf::from("ffmpeg"));
+    }
+
+    Err("未找到 FFmpeg。请安装 FFmpeg、安装格式工厂，或把 ffmpeg.exe 放到项目根目录/bin/src-tauri/binaries；也可以设置 OPEN_COURSE_PLAYER_FFMPEG 指向 ffmpeg.exe".to_string())
+}
+
+fn command_exists(name: &str) -> bool {
+    Command::new(name)
+        .arg("-version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
 }
 
 fn configured_ffmpeg_path() -> Option<PathBuf> {
@@ -1041,7 +1761,37 @@ fn ffmpeg_candidates() -> Vec<PathBuf> {
         candidates.push(cwd.join("ffmpeg"));
         candidates.push(cwd.join("bin").join("ffmpeg.exe"));
         candidates.push(cwd.join("bin").join("ffmpeg"));
+        candidates.push(cwd.join("binaries").join("ffmpeg.exe"));
+        candidates.push(cwd.join("binaries").join("ffmpeg"));
+        candidates.push(cwd.join("src-tauri").join("binaries").join("ffmpeg.exe"));
+        candidates.push(cwd.join("src-tauri").join("binaries").join("ffmpeg"));
+        candidates.push(
+            cwd.join("node_modules")
+                .join("ffmpeg-static")
+                .join("ffmpeg.exe"),
+        );
+        candidates.push(
+            cwd.join("node_modules")
+                .join("ffmpeg-static")
+                .join("ffmpeg"),
+        );
+        candidates.push(
+            cwd.join("node_modules")
+                .join("@ffmpeg-installer")
+                .join("win32-x64")
+                .join("ffmpeg.exe"),
+        );
         candidates.push(cwd.join("tools").join("ffmpeg").join("ffmpeg.exe"));
+        candidates.push(cwd.join("tools").join("ffmpeg").join("ffmpeg"));
+        candidates.extend(find_pnpm_ffmpeg_static_candidates(&cwd));
+        candidates.extend(find_pnpm_ffmpeg_installer_candidates(&cwd));
+
+        if let Some(parent) = cwd.parent() {
+            candidates.push(parent.join("src-tauri").join("binaries").join("ffmpeg.exe"));
+            candidates.push(parent.join("src-tauri").join("binaries").join("ffmpeg"));
+            candidates.extend(find_pnpm_ffmpeg_static_candidates(parent));
+            candidates.extend(find_pnpm_ffmpeg_installer_candidates(parent));
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -1064,6 +1814,52 @@ fn ffmpeg_candidates() -> Vec<PathBuf> {
                 }
             }
         }
+    }
+
+    candidates
+}
+
+fn find_pnpm_ffmpeg_static_candidates(root: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let pnpm_dir = root.join("node_modules").join(".pnpm");
+    let Ok(entries) = fs::read_dir(pnpm_dir) else {
+        return candidates;
+    };
+
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if !name.starts_with("ffmpeg-static@") {
+            continue;
+        }
+
+        let base = entry.path().join("node_modules").join("ffmpeg-static");
+        candidates.push(base.join("ffmpeg.exe"));
+        candidates.push(base.join("ffmpeg"));
+    }
+
+    candidates
+}
+
+fn find_pnpm_ffmpeg_installer_candidates(root: &Path) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let pnpm_dir = root.join("node_modules").join(".pnpm");
+    let Ok(entries) = fs::read_dir(pnpm_dir) else {
+        return candidates;
+    };
+
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if !name.starts_with("@ffmpeg-installer+") {
+            continue;
+        }
+
+        let base = entry.path().join("node_modules").join("@ffmpeg-installer");
+        candidates.push(base.join("win32-x64").join("ffmpeg.exe"));
+        candidates.push(base.join("linux-x64").join("ffmpeg"));
+        candidates.push(base.join("darwin-x64").join("ffmpeg"));
+        candidates.push(base.join("darwin-arm64").join("ffmpeg"));
     }
 
     candidates
@@ -2123,6 +2919,33 @@ mod tests {
         assert!(moov_index < mdat_index, "{text}");
     }
 
+    #[test]
+    fn diagnoses_mp4_shell_with_nonstandard_sz_frames() {
+        let root = create_test_media_dir("sz-diagnostic");
+        let sz_path = root.join("course.sz");
+        write_nonstandard_sz_like_mp4(&sz_path);
+
+        let diagnostic = diagnose_mp4_like_sz(&sz_path).unwrap();
+        assert_eq!(diagnostic.container, "mp4");
+        assert_eq!(diagnostic.video_codec.as_deref(), Some("avc1"));
+        assert_eq!(diagnostic.audio_codec.as_deref(), Some("mp4a"));
+        assert!(!diagnostic.looks_like_standard_h264);
+        assert!(!diagnostic.looks_like_standard_aac);
+        assert!(diagnostic.conclusion.contains("不是公开标准 H.264/AAC"));
+        assert!(
+            diagnostic.duration.is_some_and(|seconds| (seconds - 492.0).abs() < 0.001),
+            "duration was {:?}",
+            diagnostic.duration
+        );
+    }
+
+    #[test]
+    fn finds_project_ffmpeg_binary_when_available() {
+        let path = ffmpeg_path().unwrap();
+        let output = Command::new(path).arg("-version").output().unwrap();
+        assert!(output.status.success());
+    }
+
     fn create_test_media_dir(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
             "open-course-player-media-server-test-{name}-{}",
@@ -2197,6 +3020,97 @@ mod tests {
             ),
         ));
         std::fs::write(path, data).unwrap();
+    }
+
+    fn write_nonstandard_sz_like_mp4(path: &Path) {
+        let video_sample = vec![0x8a, 0x40, 0x22, 0x87, 0x27, 0x48, 0x55, 0xa7];
+        let audio_sample = vec![0xdc, 0xaa, 0x1c, 0x1c, 0xf4, 0x04, 0x18, 0xe3];
+        let mut mdat_payload = Vec::new();
+        mdat_payload.extend(&video_sample);
+        mdat_payload.extend(&audio_sample);
+        let audio_offset = 48 + video_sample.len() as u32;
+
+        let video_stbl = atom(
+            b"stbl",
+            &[
+                atom(b"stsd", &stsd_entry(b"avc1")).as_slice(),
+                atom(b"stsc", &stsc_one_sample()).as_slice(),
+                atom(b"stsz", &stsz_one_sample(video_sample.len() as u32)).as_slice(),
+                atom(b"stco", &stco_one_offset(48)).as_slice(),
+            ]
+            .concat(),
+        );
+        let audio_stbl = atom(
+            b"stbl",
+            &[
+                atom(b"stsd", &stsd_entry(b"mp4a")).as_slice(),
+                atom(b"stsc", &stsc_one_sample()).as_slice(),
+                atom(b"stsz", &stsz_one_sample(audio_sample.len() as u32)).as_slice(),
+                atom(b"stco", &stco_one_offset(audio_offset)).as_slice(),
+            ]
+            .concat(),
+        );
+        let moov = atom(
+            b"moov",
+            &[
+                atom(b"mvhd", &mvhd_duration(1_000, 492_000)).as_slice(),
+                atom(b"trak", &atom(b"mdia", &atom(b"minf", &video_stbl))).as_slice(),
+                atom(b"trak", &atom(b"mdia", &atom(b"minf", &audio_stbl))).as_slice(),
+            ]
+            .concat(),
+        );
+
+        let mut data = Vec::new();
+        data.extend(atom(b"ftyp", b"isom\0\0\x02\0isomiso2avc1mp41"));
+        data.extend(atom(b"free", b""));
+        data.extend(atom(b"mdat", &mdat_payload));
+        data.extend(moov);
+        std::fs::write(path, data).unwrap();
+    }
+
+    fn stsd_entry(codec: &[u8; 4]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0, 0, 0, 0]);
+        body.extend_from_slice(&1u32.to_be_bytes());
+        body.extend(atom(codec, &[0u8; 8]));
+        body
+    }
+
+    fn stsc_one_sample() -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0, 0, 0, 0]);
+        body.extend_from_slice(&1u32.to_be_bytes());
+        body.extend_from_slice(&1u32.to_be_bytes());
+        body.extend_from_slice(&1u32.to_be_bytes());
+        body.extend_from_slice(&1u32.to_be_bytes());
+        body
+    }
+
+    fn stsz_one_sample(size: u32) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0, 0, 0, 0]);
+        body.extend_from_slice(&0u32.to_be_bytes());
+        body.extend_from_slice(&1u32.to_be_bytes());
+        body.extend_from_slice(&size.to_be_bytes());
+        body
+    }
+
+    fn stco_one_offset(offset: u32) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0, 0, 0, 0]);
+        body.extend_from_slice(&1u32.to_be_bytes());
+        body.extend_from_slice(&offset.to_be_bytes());
+        body
+    }
+
+    fn mvhd_duration(timescale: u32, duration: u32) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0, 0, 0, 0]);
+        body.extend_from_slice(&0u32.to_be_bytes());
+        body.extend_from_slice(&0u32.to_be_bytes());
+        body.extend_from_slice(&timescale.to_be_bytes());
+        body.extend_from_slice(&duration.to_be_bytes());
+        body
     }
 
     fn atom(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {

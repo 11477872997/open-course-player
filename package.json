@@ -10,6 +10,7 @@
     "typecheck": "vue-tsc --noEmit",
     "design:system": "python tools/ui-ux-pro-max/scripts/search.py \"desktop course video player productivity tool dark content dense\" --design-system -p \"open-course-player\" -f markdown",
     "design:ux": "python tools/ui-ux-pro-max/scripts/search.py \"desktop player sidebar file tree accessibility\" --domain ux -n 6",
+    "ffmpeg:prepare": "node tools/prepare-ffmpeg.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -32,8 +33,10 @@
     "vue-demi": "0.14.6"
   },
   "devDependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@tauri-apps/cli": "^2.8.4",
     "@vitejs/plugin-vue": "^5.2.1",
+    "ffmpeg-static": "^5.3.0",
     "sass": "^1.83.0",
     "typescript": "~5.6.3",
     "vite": "^6.0.3",

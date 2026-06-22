@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { ArrowRight, Document, VideoPlay } from "@element-plus/icons-vue";
 import type { MediaTreeNode } from "../../../types/media";
 
@@ -15,14 +15,54 @@ const emit = defineEmits<{
 }>();
 
 const hasNodes = computed(() => props.nodes.length > 0);
+const chapterListRef = ref<HTMLElement | null>(null);
+let scrollTimer: number | null = null;
 
 function handleContextMenu(node: MediaTreeNode, event: MouseEvent) {
   emit("contextMenu", node, event);
 }
+
+function scheduleScrollToActive() {
+  if (!props.activeMediaId || props.loading) return;
+
+  if (scrollTimer !== null) {
+    window.clearTimeout(scrollTimer);
+  }
+
+  scrollTimer = window.setTimeout(() => {
+    scrollTimer = null;
+    void scrollToActive();
+  }, 80);
+}
+
+async function scrollToActive() {
+  await nextTick();
+  const container = chapterListRef.value;
+  const activeRow = container?.querySelector<HTMLElement>(".chapter-row.active");
+  if (!activeRow) return;
+
+  activeRow.scrollIntoView({
+    block: "center",
+    inline: "nearest",
+    behavior: "smooth"
+  });
+}
+
+watch(
+  () => [props.activeMediaId, props.nodes, props.loading],
+  scheduleScrollToActive,
+  { flush: "post", immediate: true }
+);
+
+onBeforeUnmount(() => {
+  if (scrollTimer !== null) {
+    window.clearTimeout(scrollTimer);
+  }
+});
 </script>
 
 <template>
-  <div class="chapter-list">
+  <div ref="chapterListRef" class="chapter-list">
     <el-skeleton v-if="loading" :rows="10" animated />
 
     <el-empty v-else-if="!hasNodes" description="当前资料库没有文件" :image-size="72" />

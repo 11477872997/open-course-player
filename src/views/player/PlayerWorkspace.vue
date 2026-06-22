@@ -14,7 +14,7 @@ import PlaybackSurface from "./components/PlaybackSurface.vue";
 import PlayerControls from "./components/PlayerControls.vue";
 import { revealPathInFileManager } from "../../api/fileLocation";
 import { scanMediaRoot } from "../../api/mediaLibrary";
-import { createMediaSource, transcodeMediaToCompatibleMp4 } from "../../api/mediaServer";
+import { createMediaSource, diagnoseSzMedia, transcodeMediaToCompatibleMp4 } from "../../api/mediaServer";
 import { playWithMpv } from "../../api/mpv";
 import { loadPlaybackHistory, savePlaybackHistory } from "../../api/playbackHistory";
 import { createSubtitleSource, findSubtitleTracks } from "../../api/subtitles";
@@ -274,7 +274,11 @@ async function loadSelectedMedia(media: SelectedMedia | null, token = ++mediaLoa
   }
 
   if (isSzCourseVideo(media.name || media.path)) {
-    await loadSzAsCompatibleMp4(media, token);
+    const loaded = await loadSzAsCompatibleMp4(media, token);
+    if (!loaded && isCurrentLoad(token)) {
+      playbackMedia.value = media;
+      playbackMessage.value = "当前 .sz 已完成结构诊断，但音视频帧不是公开标准 H.264/AAC，常规转码暂未生成可播放 MP4";
+    }
     return;
   }
 
@@ -345,10 +349,40 @@ async function loadSelectedMedia(media: SelectedMedia | null, token = ++mediaLoa
 
 async function loadSzAsCompatibleMp4(media: SelectedMedia, token: number) {
   const sourcePath = normalizeLocalPath(media.path);
-  playbackMessage.value = "正在将 .sz 转为兼容 MP4...";
+  playbackMessage.value = "正在诊断 .sz 媒体结构...";
   ElMessage.info(playbackMessage.value);
 
   try {
+    if (isTauri()) {
+      const diagnostic = await diagnoseSzMedia(sourcePath);
+      if (!isCurrentLoad(token)) return;
+
+      if (
+        diagnostic.container === "mp4" &&
+        !diagnostic.looksLikeStandardH264 &&
+        !diagnostic.looksLikeStandardAac
+      ) {
+        const measuredDuration = normalizeDuration(diagnostic.duration ?? undefined, media.duration ?? 0);
+        if (measuredDuration > 0) duration.value = measuredDuration;
+        playbackMedia.value = {
+          ...media,
+          duration: measuredDuration || media.duration,
+          size: media.size,
+          mime: media.mime ?? "video/mp4"
+        };
+        playbackMessage.value = formatSzDiagnostic(diagnostic);
+        ElMessage.warning({
+          message: playbackMessage.value,
+          duration: 7000,
+          showClose: true
+        });
+        return false;
+      }
+    }
+
+    playbackMessage.value = "正在将 .sz 转为兼容 MP4...";
+    ElMessage.info(playbackMessage.value);
+
     const source = isTauri()
       ? await transcodeMediaToCompatibleMp4(sourcePath)
       : { url: sourcePath, duration: media.duration ?? null, size: media.size ?? null, mime: "video/mp4" };
@@ -380,10 +414,44 @@ async function loadSzAsCompatibleMp4(media: SelectedMedia, token: number) {
     return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    playbackMessage.value = `.sz 转码失败：${message}`;
-    ElMessage.warning(playbackMessage.value);
+    playbackMessage.value = formatSzTranscodeFailure(message);
+    ElMessage.warning({
+      message: playbackMessage.value,
+      duration: 6000,
+      showClose: true
+    });
     return false;
   }
+}
+
+function formatSzDiagnostic(diagnostic: {
+  videoCodec?: string | null;
+  audioCodec?: string | null;
+  firstVideoSampleSize?: number | null;
+  firstVideoSampleHead?: string | null;
+  firstAudioSampleSize?: number | null;
+  firstAudioSampleHead?: string | null;
+  mdatEntropy?: number | null;
+  conclusion: string;
+}) {
+  const entropy = Number.isFinite(diagnostic.mdatEntropy)
+    ? `，mdat 熵 ${diagnostic.mdatEntropy?.toFixed(3)}`
+    : "";
+  return `.sz 结构诊断：${diagnostic.conclusion}（视频 ${diagnostic.videoCodec || "未知"} 首帧 ${diagnostic.firstVideoSampleSize || 0}B: ${diagnostic.firstVideoSampleHead || "无"}；音频 ${diagnostic.audioCodec || "未知"} 首帧 ${diagnostic.firstAudioSampleSize || 0}B: ${diagnostic.firstAudioSampleHead || "无"}${entropy}）`;
+}
+
+function formatSzTranscodeFailure(message: string) {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("不是标准 h.264 nal 数据") ||
+    normalized.includes("无法按标准 aac 解码") ||
+    normalized.includes("invalid nal unit size") ||
+    normalized.includes("error splitting the input into nal units")
+  ) {
+    return ".sz 转码失败：当前文件有 MP4 外壳和 avc1/mp4a 轨道声明，但媒体帧不是公开标准 H.264/AAC 码流；已尝试标准转码和重封装，暂未生成可播放 MP4。";
+  }
+
+  return `.sz 转码失败：${message}`;
 }
 
 function resolvePlaybackFromMime(mime: string | null | undefined, media: SelectedMedia) {
@@ -861,9 +929,11 @@ async function restorePlaybackHistory() {
     }
 
     if (history.lastMediaPath) {
-      const restored = findNodeByPath(library.roots.flatMap((root) => root.nodes), history.lastMediaPath);
-      if (restored?.playable && restored.kind !== "folder") {
-        handleSelect(restored);
+      const restored = findNodeByPathInRoots(library.roots, history.lastMediaPath);
+      if (restored?.node.playable && restored.node.kind !== "folder") {
+        library.setActiveRoot(restored.rootId);
+        await nextTick();
+        handleSelect(restored.node);
       }
     }
   } catch (error) {
@@ -901,6 +971,15 @@ async function persistPlaybackHistory() {
     const message = error instanceof Error ? error.message : String(error);
     console.warn("保存历史记录失败", message);
   }
+}
+
+function findNodeByPathInRoots(roots: MediaLibraryRoot[], path: string) {
+  for (const root of roots) {
+    const node = findNodeByPath(root.nodes, path);
+    if (node) return { rootId: root.id, node };
+  }
+
+  return null;
 }
 
 function findNodeByPath(nodes: MediaTreeNode[], path: string): MediaTreeNode | null {

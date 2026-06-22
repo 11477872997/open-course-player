@@ -13,6 +13,7 @@ pub fn run() {
             media_library::scan_media_root,
             media_server::create_media_source,
             media_server::create_subtitle_source,
+            media_server::diagnose_sz_media,
             media_server::find_subtitle_tracks,
             media_server::transcode_media_to_compatible_mp4,
             mpv::mpv_play,

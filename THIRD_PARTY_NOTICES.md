@@ -15,7 +15,7 @@
 | hls.js | Apache-2.0 | HLS 播放 | 是，打包 JS |
 | video.js | Apache-2.0 | 可选媒体 UI | 待定 |
 | mpv | GPL-2.0-or-later | 原生播放兜底 | 计划 |
-| FFmpeg | 取决于构建，LGPL 或 GPL | 通过 mpv 做解封装和解码 | 计划随 mpv |
+| FFmpeg | GPLv3（当前 Windows x64 二进制） | `.sz` 转码为兼容 MP4 | 是，见“当前打包二进制” |
 | EasyPlayer.js | 待确认 | 重点评估的增强播放器，流媒体/H.265 | 许可证确认前不进入公开安装包 |
 
 ## 打包二进制规则
@@ -31,7 +31,9 @@
 
 ## 当前打包二进制
 
-暂无。
+| 名称 | 版本 | 来源 | 许可证 | 用途 | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| FFmpeg Windows x64 binary | `6.1.1 essentials build` | npm 包 `ffmpeg-static@5.3.0`，Windows 构建来自 gyan.dev | GPLv3 | 将 `.sz` 等本地课程视频转为 H.264/AAC/yuv420p 兼容 MP4 缓存 | 通过 `pnpm run ffmpeg:prepare` 复制到 `src-tauri/binaries/ffmpeg.exe`，`@ffmpeg-installer/ffmpeg` 仅作为开发回退 |
 
 ## 当前素材
 
@@ -70,8 +72,14 @@ Before the first public binary release, planned versions must be replaced with e
 | hls.js | Apache-2.0 | HLS playback | Yes, bundled JS |
 | video.js | Apache-2.0 | Optional media UI | To be decided |
 | mpv | GPL-2.0-or-later | Native playback fallback | Planned |
-| FFmpeg | LGPL or GPL depending on build | Demuxing and decoding through mpv | Planned through mpv |
+| FFmpeg | GPLv3 for the current Windows x64 binary | Transcoding `.sz` into compatible MP4 cache | Yes, see "Current Bundled Binaries" |
 | EasyPlayer.js | To be confirmed | Key candidate for streaming/H.265 enhancement | No public installer bundling until license is confirmed |
+
+## Current Bundled Binaries
+
+| Name | Version | Source | License | Use | Notes |
+| --- | --- | --- | --- | --- | --- |
+| FFmpeg Windows x64 binary | `6.1.1 essentials build` | npm package `ffmpeg-static@5.3.0`, Windows build from gyan.dev | GPLv3 | Transcode `.sz` course videos into H.264/AAC/yuv420p compatible MP4 cache | Copied to `src-tauri/binaries/ffmpeg.exe` by `pnpm run ffmpeg:prepare`; `@ffmpeg-installer/ffmpeg` is only a development fallback |
 
 ## Current Assets
 

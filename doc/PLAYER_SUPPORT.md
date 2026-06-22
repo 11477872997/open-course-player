@@ -21,7 +21,7 @@ mpv：主流本地文件格式兼容兜底
 | `.m3u8` | P1 | EasyPlayer.js 或 hls.js | mpv | HLS 播放列表，常引用 `.ts` 分片 |
 | HTTP-FLV, fMP4, WebRTC, H.265 流 | P1 | EasyPlayer.js | mpv 或外部方案 | EasyPlayer.js 的强项，许可证确认后接入 |
 | `.mp4`, `.m4v` | P1 | HTML5 视频 | mpv | H.264/AAC 兼容性最好 |
-| `.sz` | P1 | FFmpeg 转码缓存 + HTML5 视频 | 明确错误提示 | 先转为 H.264/AAC/yuv420p 兼容 MP4，不自动调用外部播放器 |
+| `.sz` | P1 | FFmpeg 转码缓存 + HTML5 视频 | 明确诊断 | 先按 MP4/TS 等真实容器尝试转码；如果音视频帧不是标准 H.264/AAC，则给出具体诊断 |
 | `.webm`, `.ogv` | P2 | HTML5 视频 | mpv | 取决于桌面网页视图的编码支持 |
 | `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.aac`, `.opus`, `.wma` | P2 | HTML5 音频 | mpv | 已接入音频播放面板，具体编码取决于 WebView |
 | `.mkv` | P1 | mpv | 外部打开 | 内置播放器不可靠 |
@@ -51,10 +51,11 @@ HTTP-FLV/fMP4/WebRTC/H.265 流
   -> 解码或加载失败后切 mpv
 
 .sz
-  -> 先按真实文件头识别，通常是伪装扩展名的 MP4
-  -> 直接调用 FFmpeg 转为 H.264/AAC/yuv420p 兼容 MP4 缓存
+  -> 先按真实文件头识别，有些是伪装扩展名的 MP4
+  -> 调用 FFmpeg 转为 H.264/AAC/yuv420p 兼容 MP4 缓存
   -> 命中缓存时复用缓存文件
-  -> 转码失败或转码后仍无法解码时给出明确错误，不自动切 mpv 或系统默认播放器
+  -> 如果容器像 MP4 但 H.264/AAC 帧无法解码，提示具体码流诊断
+  -> 不做未授权的密钥提取、绕过授权或专有解密
 
 .mp3/.wav/.ogg/.flac
   -> HTML5 audio + 音频面板
@@ -98,10 +99,11 @@ HTTP-FLV/fMP4/WebRTC/H.265 流
 
 - FFmpeg 只生成兼容播放缓存，不替代原始文件。
 - 转码输出写入系统临时缓存目录，不修改用户课程文件。
-- `.sz` 选中后直接转为兼容 MP4：`libx264`、`yuv420p`、`aac`、`+faststart`。
+- `.sz` 选中后直接转为兼容 MP4：优先 1080P H.264/AAC 重编码，失败后尝试 720P 保守重编码和快速重封装。
 - 缓存按原文件路径、大小和修改时间生成，命中缓存时不得重复转码。
-- FFmpeg 查找顺序：`OPEN_COURSE_PLAYER_FFMPEG` 环境变量、应用目录/项目目录、Windows 格式工厂常见安装目录、系统 `PATH`。
+- FFmpeg 查找顺序：`OPEN_COURSE_PLAYER_FFMPEG` 环境变量、应用目录/项目目录、`src-tauri/binaries`、`@ffmpeg-installer/ffmpeg`、Windows 格式工厂常见安装目录、系统 `PATH`。
 - 如果随包分发 FFmpeg，必须记录版本、构建参数、许可证和源码获取方式。
+- `.sz` 不是统一开放格式。如果 FFmpeg 报 `Invalid NAL unit size`、`Error splitting the input into NAL units`、AAC 通道配置异常等错误，表示 MP4 容器内的音视频帧不是标准 H.264/AAC 码流；这时需要专用解码器、厂商 SDK、官方导出 MP4，或明确且有授权的格式说明。
 
 ## EasyPlayer.js 要求
 
